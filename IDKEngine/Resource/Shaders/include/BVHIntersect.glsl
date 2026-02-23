@@ -1,0 +1,429 @@
+#define USE_TLAS AppInsert(USE_TLAS)
+
+#define BLAS_STACK_SIZE max(AppInsert(BLAS_STACK_SIZE), 1)
+#define TLAS_STACK_SIZE max(24, 1)
+
+AppInclude(include/StaticUniformBuffers.glsl)
+AppInclude(include/StaticStorageBuffers.glsl)
+AppInclude(include/IntersectionRoutines.glsl)
+
+struct HitInfo
+{
+    vec2 BaryXY; // z = 1.0 - bary.x - bary.y
+    float T;
+    uint TriangleId;
+    uint MeshTransformId;
+};
+
+#ifdef TRAVERSAL_STACK_USE_SHARED_STACK_SIZE
+shared uint BlasTraversalStack[BLAS_STACK_SIZE][TRAVERSAL_STACK_USE_SHARED_STACK_SIZE];
+#else
+uint BlasTraversalStack[BLAS_STACK_SIZE];
+#endif
+
+void StackPush(inout uint stackPtr, uint newEntry);
+uint StackPop(inout uint stackPtr);
+
+bool IntersectBlas(Ray ray, GpuBlasDesc blasDesc, inout HitInfo hitInfo, inout float debugCost)
+{
+    bool hit = false;
+    float tMinLeft;
+    float tMinRight;
+    
+    #if !USE_TLAS
+    GpuBlasNode rootNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + 1];
+    if (!(RayBoxIntersect(ray, Box(rootNode.Min, rootNode.Max), tMinLeft) && tMinLeft < hitInfo.T))
+    {
+        return false;
+    }
+    #endif
+
+    uint stackPtr = 0;
+    uint stackTop = 2;
+    while (true)
+    {
+        debugCost++;
+        GpuBlasNode leftNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + stackTop];
+        GpuBlasNode rightNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + stackTop + 1];
+
+        bool hitLeft = RayBoxIntersect(ray, Box(leftNode.Min, leftNode.Max), tMinLeft) && tMinLeft <= hitInfo.T;
+        bool hitRight = RayBoxIntersect(ray, Box(rightNode.Min, rightNode.Max), tMinRight) && tMinRight <= hitInfo.T;
+
+        bool intersectLeft = hitLeft && leftNode.TriCount > 0;
+        bool intersectRight = hitRight && rightNode.TriCount > 0;
+        if (intersectLeft || intersectRight)
+        {
+            uint first = intersectLeft ? leftNode.TriStartOrChild : rightNode.TriStartOrChild;
+            uint end = !intersectRight ? (leftNode.TriStartOrChild + leftNode.TriCount) : (rightNode.TriStartOrChild + rightNode.TriCount);
+            first += blasDesc.TriangleOffset;
+            end += blasDesc.TriangleOffset;
+            debugCost += (end - first) * 1.1; // hardcoded triangle cost
+            
+            for (uint i = first; i < end; i++)
+            {
+                uvec3 indices = blasTriangleIndicesSSBO.Indices[i].Indices;
+                vec3 p0 = Unpack(vertexPositionsSSBO.Positions[indices.x]);
+                vec3 p1 = Unpack(vertexPositionsSSBO.Positions[indices.y]);
+                vec3 p2 = Unpack(vertexPositionsSSBO.Positions[indices.z]);
+
+                vec3 bary;
+                float hitT;
+                if (RayTriangleIntersect(ray, p0, p1, p2, bary, hitT) && hitT < hitInfo.T)
+                {
+                    hit = true;
+                    hitInfo.TriangleId = i;
+                    hitInfo.BaryXY = bary.xy;
+                    hitInfo.T = hitT;
+                }
+            }
+        }
+
+        bool traverseLeft = hitLeft && leftNode.TriCount == 0;
+        bool traverseRight = hitRight && rightNode.TriCount == 0;
+        if (traverseLeft || traverseRight)
+        {
+            if (traverseLeft && traverseRight)
+            {
+                bool leftCloser = tMinLeft < tMinRight;
+
+                stackTop = leftCloser ? leftNode.TriStartOrChild : rightNode.TriStartOrChild;
+                StackPush(stackPtr, leftCloser ? rightNode.TriStartOrChild : leftNode.TriStartOrChild);
+            }
+            else
+            {
+                stackTop = traverseLeft ? leftNode.TriStartOrChild : rightNode.TriStartOrChild;
+            }
+        }
+        else
+        {
+            if (stackPtr == 0) break;
+            stackTop = StackPop(stackPtr);
+        }
+    }
+
+    return hit;
+}
+
+bool IntersectBlasAny(Ray ray, GpuBlasDesc blasDesc, inout HitInfo hitInfo)
+{
+    float tMinLeft;
+    float tMinRight;
+    
+    #if !USE_TLAS
+    GpuBlasNode rootNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + 1];
+    if (!(RayBoxIntersect(ray, Box(rootNode.Min, rootNode.Max), tMinLeft) && tMinLeft < hitInfo.T))
+    {
+        return false;
+    }
+    #endif
+
+    uint stackPtr = 0;
+    uint stackTop = 2;
+    while (true)
+    {
+        GpuBlasNode leftNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + stackTop];
+        GpuBlasNode rightNode = blasNodeSSBO.Nodes[blasDesc.NodeOffset + stackTop + 1];
+
+        bool hitLeft = RayBoxIntersect(ray, Box(leftNode.Min, leftNode.Max), tMinLeft) && tMinLeft <= hitInfo.T;
+        bool hitRight = RayBoxIntersect(ray, Box(rightNode.Min, rightNode.Max), tMinRight) && tMinRight <= hitInfo.T;
+
+        bool intersectLeft = hitLeft && leftNode.TriCount > 0;
+        bool intersectRight = hitRight && rightNode.TriCount > 0;
+        if (intersectLeft || intersectRight)
+        {
+            uint first = intersectLeft ? leftNode.TriStartOrChild : rightNode.TriStartOrChild;
+            uint end = !intersectRight ? (leftNode.TriStartOrChild + leftNode.TriCount) : (rightNode.TriStartOrChild + rightNode.TriCount);
+            first += blasDesc.TriangleOffset;
+            end += blasDesc.TriangleOffset;
+            
+            for (uint i = first; i < end; i++)
+            {
+                uvec3 indices = blasTriangleIndicesSSBO.Indices[i].Indices;
+                vec3 p0 = Unpack(vertexPositionsSSBO.Positions[indices.x]);
+                vec3 p1 = Unpack(vertexPositionsSSBO.Positions[indices.y]);
+                vec3 p2 = Unpack(vertexPositionsSSBO.Positions[indices.z]);
+
+                vec3 bary;
+                float hitT;
+                if (RayTriangleIntersect(ray, p0, p1, p2, bary, hitT) && hitT < hitInfo.T)
+                {
+                    hitInfo.TriangleId = i;
+                    hitInfo.BaryXY = bary.xy;
+                    hitInfo.T = hitT;
+
+                    return true;
+                }
+            }
+        }
+
+        bool traverseLeft = hitLeft && leftNode.TriCount == 0;
+        bool traverseRight = hitRight && rightNode.TriCount == 0;
+        if (traverseLeft || traverseRight)
+        {
+            if (traverseLeft && traverseRight)
+            {
+                stackTop = leftNode.TriStartOrChild;
+                StackPush(stackPtr, rightNode.TriStartOrChild);
+            }
+            else
+            {
+                stackTop = traverseLeft ? leftNode.TriStartOrChild : rightNode.TriStartOrChild;
+            }
+        }
+        else
+        {
+            if (stackPtr == 0) break;
+            stackTop = StackPop(stackPtr);
+        }
+    }
+
+    return false;
+}
+
+bool TraceRay(Ray ray, out HitInfo hitInfo, out float debugCost, bool traceLights, float maxDist)
+{
+    hitInfo.T = maxDist;
+    hitInfo.TriangleId = ~0u;
+    debugCost = 0.0;
+
+    if (traceLights)
+    {
+        float tMin;
+        float tMax;
+        for (int i = 0; i < lightsUBO.Count; i++)
+        {
+            GpuLight light = lightsUBO.Lights[i];
+            if (RaySphereIntersect(ray, light.Position, light.Radius, tMin, tMax) && tMin < hitInfo.T)
+            {
+                hitInfo.T = tMin < 0.0 ? tMax : tMin;
+                hitInfo.MeshTransformId = i;
+                // hitInfo.TriangleId = ~0u; // Uncomment if moved after geometry test
+            }
+        }
+    }
+
+    #if USE_TLAS
+    float tMinLeft;
+    float tMinRight;
+
+    uint stackPtr = 0;
+    uint stackTop = 0;
+    uint stack[TLAS_STACK_SIZE];
+    while (true)
+    {
+        GpuTlasNode parent = tlasSSBO.Nodes[stackTop];
+        // float tMin;
+        // if (!(RayBoxIntersect(ray, Box(parent.Min, parent.Max), tMin) && tMin <= hitInfo.T))
+        // {
+        //     if (stackPtr == 0) break;
+        //     stackTop = stack[--stackPtr];
+        //     continue;
+        // }
+
+        bool isLeaf = parent.IsLeafAndChildOrInstanceId >> 31 == 1;
+        uint childOrInstanceId = parent.IsLeafAndChildOrInstanceId & ((1u << 31) - 1);
+        if (isLeaf)
+        {
+            GpuBlasInstance blasInstance = blasInstanceSSBO.Instances[childOrInstanceId];
+            GpuBlasDesc blasDesc = blasDescSSBO.Descs[blasInstance.BlasId];
+            GpuMeshTransform meshTransform = meshTransformSSBO.Transforms[blasInstance.MeshTransformId];
+
+            mat4 invModelMatrix = mat4(meshTransform.InvModelMatrix);
+            Ray localRay = RayTransform(ray, invModelMatrix);
+
+            if (IntersectBlas(localRay, blasDesc, hitInfo, debugCost))
+            {
+                hitInfo.MeshTransformId = blasInstance.MeshTransformId;
+            }
+
+            if (stackPtr == 0) break;
+            stackTop = stack[--stackPtr];
+            continue;
+        }
+        
+
+        uint leftChildId = childOrInstanceId;
+        uint rightChildId = leftChildId + 1;
+        GpuTlasNode leftNode = tlasSSBO.Nodes[leftChildId];
+        GpuTlasNode rightNode = tlasSSBO.Nodes[rightChildId];
+
+        bool traverseLeft = RayBoxIntersect(ray, Box(leftNode.Min, leftNode.Max), tMinLeft) && tMinLeft < hitInfo.T;
+        bool traverseRight = RayBoxIntersect(ray, Box(rightNode.Min, rightNode.Max), tMinRight) && tMinRight < hitInfo.T;
+
+        if (traverseLeft || traverseRight)
+        {
+            if (traverseLeft && traverseRight)
+            {
+                bool leftCloser = tMinLeft < tMinRight;
+
+                stackTop = leftCloser ? leftChildId : rightChildId;
+                stack[stackPtr++] = leftCloser ? rightChildId : leftChildId;
+            }
+            else
+            {
+                stackTop = traverseLeft ? leftChildId : rightChildId;
+            }
+        }
+        else
+        {
+            if (stackPtr == 0) break;
+            stackTop = stack[--stackPtr];
+        }
+    }
+    #else
+
+    for (uint i = 0; i < blasInstanceSSBO.Instances.length(); i++)
+    {
+        GpuBlasInstance blasInstance = blasInstanceSSBO.Instances[i];
+        GpuBlasDesc blasDesc = blasDescSSBO.Descs[blasInstance.BlasId];
+        GpuMeshTransform meshTransform = meshTransformSSBO.Transforms[blasInstance.MeshTransformId];
+
+        mat4 invModelMatrix = mat4(meshTransform.InvModelMatrix);
+        Ray localRay = RayTransform(ray, invModelMatrix);
+        if (IntersectBlas(localRay, blasDesc, hitInfo, debugCost))
+        {
+            hitInfo.MeshTransformId = blasInstance.MeshTransformId;
+        }
+    }
+    #endif
+
+    return hitInfo.T != maxDist;
+}
+
+bool TraceRay(Ray ray, out HitInfo hitInfo, bool traceLights, float maxDist)
+{
+    float debugCost;
+    return TraceRay(ray, hitInfo, debugCost, traceLights, maxDist);
+}
+
+bool TraceRayAny(Ray ray, out HitInfo hitInfo, bool traceLights, float maxDist)
+{
+    hitInfo.T = maxDist;
+    hitInfo.TriangleId = ~0u;
+
+    if (traceLights)
+    {
+        float tMin;
+        float tMax;
+        for (int i = 0; i < lightsUBO.Count; i++)
+        {
+            GpuLight light = lightsUBO.Lights[i];
+            if (RaySphereIntersect(ray, light.Position, light.Radius, tMin, tMax) && tMin < hitInfo.T)
+            {
+                hitInfo.T = tMin < 0.0 ? tMax : tMin;
+                hitInfo.MeshTransformId = i;
+
+                return true;
+            }
+        }
+    }
+
+
+    #if USE_TLAS
+    float tMinLeft;
+    float tMinRight;
+
+    uint stackPtr = 0;
+    uint stackTop = 0;
+    uint stack[TLAS_STACK_SIZE];
+    while (true)
+    {
+        GpuTlasNode parent = tlasSSBO.Nodes[stackTop];
+        // float tMin;
+        // if (!(RayBoxIntersect(ray, Box(parent.Min, parent.Max), tMin) && tMin <= hitInfo.T))
+        // {
+        //     if (stackPtr == 0) break;
+        //     stackTop = stack[--stackPtr];
+        //     continue;
+        // }
+
+        bool isLeaf = parent.IsLeafAndChildOrInstanceId >> 31 == 1;
+        uint childOrInstanceId = parent.IsLeafAndChildOrInstanceId & ((1u << 31) - 1);
+        if (isLeaf)
+        {
+            GpuBlasInstance blasInstance = blasInstanceSSBO.Instances[childOrInstanceId];
+            GpuBlasDesc blasDesc = blasDescSSBO.Descs[blasInstance.BlasId];
+            GpuMeshTransform meshTransform = meshTransformSSBO.Transforms[blasInstance.MeshTransformId];
+
+            mat4 invModelMatrix = mat4(meshTransform.InvModelMatrix);
+            Ray localRay = RayTransform(ray, invModelMatrix);
+
+            if (IntersectBlasAny(localRay, blasDesc, hitInfo))
+            {
+                hitInfo.MeshTransformId = blasInstance.MeshTransformId;
+
+                return true;
+            }
+
+            if (stackPtr == 0) break;
+            stackTop = stack[--stackPtr];
+            continue;
+        }
+        
+
+        uint leftChildId = childOrInstanceId;
+        uint rightChildId = leftChildId + 1;
+        GpuTlasNode leftNode = tlasSSBO.Nodes[leftChildId];
+        GpuTlasNode rightNode = tlasSSBO.Nodes[rightChildId];
+
+        bool traverseLeft = RayBoxIntersect(ray, Box(leftNode.Min, leftNode.Max), tMinLeft) && tMinLeft < hitInfo.T;
+        bool traverseRight = RayBoxIntersect(ray, Box(rightNode.Min, rightNode.Max), tMinRight) && tMinRight < hitInfo.T;
+
+        if (traverseLeft || traverseRight)
+        {
+            if (traverseLeft && traverseRight)
+            {
+                bool leftCloser = tMinLeft < tMinRight;
+
+                stackTop = leftCloser ? leftChildId : rightChildId;
+                stack[stackPtr++] = leftCloser ? rightChildId : leftChildId;
+            }
+            else
+            {
+                stackTop = traverseLeft ? leftChildId : rightChildId;
+            }
+        }
+        else
+        {
+            if (stackPtr == 0) break;
+            stackTop = stack[--stackPtr];
+        }
+    }
+    #else
+
+    for (uint i = 0; i < blasInstanceSSBO.Instances.length(); i++)
+    {
+        GpuBlasInstance blasInstance = blasInstanceSSBO.Instances[i];
+        GpuBlasDesc blasDesc = blasDescSSBO.Descs[blasInstance.BlasId];
+        GpuMeshTransform meshTransform = meshTransformSSBO.Transforms[blasInstance.MeshTransformId];
+
+        mat4 invModelMatrix = mat4(meshTransform.InvModelMatrix);
+        Ray localRay = RayTransform(ray, invModelMatrix);
+        if (IntersectBlasAny(localRay, blasDesc, hitInfo))
+        {
+            hitInfo.MeshTransformId = blasInstance.MeshTransformId;
+            return true;
+        }
+    }
+    #endif
+
+    return false;
+}
+
+void StackPush(inout uint stackPtr, uint newEntry)
+{
+#ifdef TRAVERSAL_STACK_USE_SHARED_STACK_SIZE
+    BlasTraversalStack[stackPtr++][gl_LocalInvocationIndex] = newEntry;
+#else
+    BlasTraversalStack[stackPtr++] = newEntry;
+#endif
+}
+
+uint StackPop(inout uint stackPtr)
+{
+#ifdef TRAVERSAL_STACK_USE_SHARED_STACK_SIZE
+    return BlasTraversalStack[--stackPtr][gl_LocalInvocationIndex];
+#else
+    return BlasTraversalStack[--stackPtr];
+#endif
+}

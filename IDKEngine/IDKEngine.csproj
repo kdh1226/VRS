@@ -1,0 +1,81 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Platforms>AnyCPU;x64</Platforms>
+    <AssemblyName>IDKEngine</AssemblyName>
+    <RootNamespace>IDKEngine</RootNamespace>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- <UseWindowsThreadPool>true</UseWindowsThreadPool> -->
+
+    <!-- 
+    https://learn.microsoft.com/en-us/dotnet/core/runtime-config/compilation#quick-jit
+    QuickJIT has an overhead for code called first time(s). 
+    It doubles the time spent on building BLASes for Sponza+Helmet+Lucy on application load.
+    On the other hand it increase performance for parallel BLAS refitting.
+    -->
+    <TieredCompilation>true</TieredCompilation> <!-- True by default-->
+    <TieredCompilationQuickJit>false</TieredCompilationQuickJit><!-- True by default-->
+    <TieredCompilationQuickJitForLoops>false</TieredCompilationQuickJitForLoops> <!-- False by default-->
+
+    <PublishAot>true</PublishAot>
+    <UseSizeOptimizedLinq>true</UseSizeOptimizedLinq>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <OptimizationPreference>Speed</OptimizationPreference> 
+    <IlcInstructionSet>avx2</IlcInstructionSet>
+    <IlcDisableVxsort>true</IlcDisableVxsort>
+    <IlcDehydrate>true</IlcDehydrate>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+
+    <!-- <UseSystemResourceKeys>true</UseSystemResourceKeys> -->
+    <!-- <IlcDisableReflection>true</IlcDisableReflection> -->
+    <!-- <StackTraceSupport>false</StackTraceSupport> -->
+
+    <!--For Sizoscope-->
+    <!-- <IlcGenerateMstatFile>true</IlcGenerateMstatFile> -->
+    <!-- <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile> -->
+
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <CheckForOverflowUnderflow>True</CheckForOverflowUnderflow>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <CheckForOverflowUnderflow>True</CheckForOverflowUnderflow>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FFX_FSR2" Version="1.0.3" />
+    <PackageReference Include="hamarb123.Analyzers" Version="1.2.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="ImGui.NET" Version="1.90.8.1" />
+    <PackageReference Include="Ktx2.NET" Version="1.0.5" />
+    <PackageReference Include="Meshoptimizer.NET" Version="1.0.7" />
+    <PackageReference Include="NativeFileDialogSharp" Version="0.6.0-alpha" />
+    <PackageReference Include="OpenTK.Windowing.GraphicsLibraryFramework" Version="5.0.0-pre.15" />
+    <PackageReference Include="ReFuel.StbImage" Version="2.1.0" />
+    <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
+    <PackageReference Include="SharpGLTF.Toolkit" Version="1.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BBG\BBG.csproj" />
+    <ProjectReference Include="..\Logger\Logger.csproj" />
+  </ItemGroup>
+
+</Project>

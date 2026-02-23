@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "IDKEngine": {
+      "commandName": "Project",
+      "workingDirectory": "$(ProjectDir)",
+      "nativeDebugging": false,
+      "hotReloadEnabled": false
+    }
+  }
+}

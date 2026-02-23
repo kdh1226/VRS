@@ -1,0 +1,61 @@
+﻿[*.{cs,vb}]
+
+######################
+## Warning messages ##
+######################
+
+# CS8632: The annotation for nullable reference types should only be used in code within a '#nullable' annotations context.
+dotnet_diagnostic.CS8632.severity = none
+
+# Because in development you are likely to temporarily disable code. 
+# CS0162: Unreachable code detected
+dotnet_diagnostic.CS0162.severity = none
+
+# Because structs that are shared with GPU require fields to be present even when not used on CPU 
+# CS0649: Field 'field' is never assigned to, and will always have its default value 'value'
+dotnet_diagnostic.CS0649.severity = none
+
+# Because structs that are shared with GPU require fields to be present even when not used on CPU 
+# CS0169: The field 'field' is never used
+dotnet_diagnostic.CS0169.severity = none
+
+# Because callers should be aware when they pass a reference to a `ref readonly` parameter
+# CS9192: Argument should be passed with 'ref' or 'in' keyword
+dotnet_diagnostic.CS9192.severity = error
+
+# Because I want `ref readonly` parameters to only accept l-values. Just like `ref`. After all thats its intention
+# CS9193: Argument should be a variable because it is passed to a 'ref readonly' parameter
+dotnet_diagnostic.CS9193.severity = error
+
+# I'd rather not do this but C# makes me in order to achieve good performance. For example when sorting.
+# CS8500: This takes the address of, gets the size of, or declares a pointer to a managed type
+dotnet_diagnostic.CS8500.severity = none
+
+########################
+## Code quality rules ##
+########################
+
+# Because it decreases chances of forgeting to call Dispose
+# CA2213: Disposable fields should be disposed
+dotnet_diagnostic.CA2213.severity = warning
+
+######################
+## Code style rules ##
+######################
+
+# Because I dont include the Source folder in namespaces
+# IDE0130: Namespace does not match folder structure
+dotnet_style_namespace_match_folder = false
+
+# IDE0090: Use 'new(...)'
+csharp_style_implicit_object_creation_when_type_is_apparent = false
+
+# IDE0161: Convert to file-scoped namespace
+csharp_style_namespace_declarations = file_scoped
+
+# IDE0017: Simplify object initialization
+dotnet_style_object_initializer = false
+
+# Because calling non readonly methods on ref readonly structs causes hidden defensive copy
+# IDE0251: Make member 'readonly'
+dotnet_diagnostic.IDE0251.severity = error
