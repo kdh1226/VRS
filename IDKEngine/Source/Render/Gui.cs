@@ -714,6 +714,17 @@ partial class Gui : IDisposable
                         ImGui.SliderFloat("MaxDist", ref app.RasterizerPipeline.SSR.Settings.MaxDist, 1, 100);
                     }
                 }
+
+                if (ImGui.CollapsingHeader("MotionBlur"))
+                {
+                    ImGui.Checkbox("IsMotionBlur", ref app.RasterizerPipeline.IsMotionBlur);
+                    if (app.RasterizerPipeline.IsMotionBlur)
+                    {
+                        ImGui.SliderInt("Samples##SamplesMotionBlur", ref app.RasterizerPipeline.MotionBlur.Settings.SampleCount, 1, 32);
+                        ImGui.SliderFloat("Intensity", ref app.RasterizerPipeline.MotionBlur.Settings.Intensity, 0.0f, 25.0f);
+                        ImGui.SliderFloat("MaxBlurPixels", ref app.RasterizerPipeline.MotionBlur.Settings.MaxBlurPixels, 1.0f, 128.0f);
+                    }
+                }
             }
             else if (app.RenderMode_ == Application.RenderMode.PathTracer)
             {

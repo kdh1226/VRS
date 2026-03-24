@@ -142,6 +142,7 @@ class RasterPipeline : IDisposable
     // Run at render resolution
     public readonly SSAO SSAO;
     public readonly SSR SSR;
+    public readonly MotionBlur MotionBlur; // ← 추가
     public readonly ConeTracer ConeTracer;
     public readonly Voxelizer Voxelizer;
     public readonly LightingShadingRateClassifier LightingVRS;
@@ -155,6 +156,7 @@ class RasterPipeline : IDisposable
     public bool IsWireframe;
     public bool IsSSAO;
     public bool IsSSR;
+    public bool IsMotionBlur;
     public bool IsVXGI;
     public bool IsVariableRateShading;
 
@@ -209,6 +211,7 @@ class RasterPipeline : IDisposable
     {
         SSAO = new SSAO(renderSize, new SSAO.GpuSettings());
         SSR = new SSR(renderSize, new SSR.GpuSettings());
+        MotionBlur = new MotionBlur(renderSize, new MotionBlur.GpuSettings()); // ← 추가
         LightingVRS = new LightingShadingRateClassifier(renderSize, new LightingShadingRateClassifier.GpuSettings());
         Voxelizer = new Voxelizer(256, 256, 256, new Vector3(-28.0f, -3.0f, -17.0f), new Vector3(28.0f, 20.0f, 17.0f));
         ConeTracer = new ConeTracer(renderSize, new ConeTracer.GpuSettings());
@@ -247,6 +250,7 @@ class RasterPipeline : IDisposable
         IsWireframe = false;
         IsSSAO = true;
         IsSSR = false;
+        IsMotionBlur = true;
         IsVariableRateShading = false;
         IsVXGI = false;
         GenerateShadowMaps = true;
@@ -604,7 +608,7 @@ class RasterPipeline : IDisposable
                 Vector2 normalizedMouse = mousePos / windowSize;
 
                 // (중요) Y축이 뒤집혀 있을 수 있으니, 마우스가 위아래 반대로 움직이면 주석을 푸세요
-                // normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
+                normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
 
                 mySettings.MousePos = normalizedMouse;
             }
@@ -617,6 +621,11 @@ class RasterPipeline : IDisposable
 
             // 4. 쉐이더 실행
             LightingVRS.Compute(beforeTAATexture);
+        }
+
+        if (IsMotionBlur)
+        {
+            MotionBlur.Compute(beforeTAATexture, beforeTAATexture);
         }
 
         if (IsSSR)
@@ -661,6 +670,7 @@ class RasterPipeline : IDisposable
 
         SSAO.SetSize(renderSize);
         SSR.SetSize(renderSize);
+        MotionBlur.SetSize(renderSize); // ← 추가
         LightingVRS.SetSize(renderSize);
         ConeTracer.SetSize(renderSize);
 
@@ -752,6 +762,7 @@ class RasterPipeline : IDisposable
 
         SSAO.Dispose();
         SSR.Dispose();
+        MotionBlur.Dispose(); // ← 추가
         LightingVRS.Dispose();
         Voxelizer.Dispose();
         ConeTracer.Dispose();
