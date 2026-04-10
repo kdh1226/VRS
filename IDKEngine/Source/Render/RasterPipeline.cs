@@ -142,13 +142,15 @@ class RasterPipeline : IDisposable
     // Run at render resolution
     public readonly SSAO SSAO;
     public readonly SSR SSR;
-    public readonly MotionBlur MotionBlur; // ← 추가
+    public readonly MotionBlur MotionBlur;
     public readonly ConeTracer ConeTracer;
     public readonly Voxelizer Voxelizer;
     public readonly LightingShadingRateClassifier LightingVRS;
+    
+    // ▼▼▼ [추가] 주파수 맵 VRS 객체 ▼▼▼
+    public readonly FrequencyMap FrequencyVRS;
 
     // Run at presentation resolution
-    // Only one is ever used while the other is disposed and set to null
     public TAAResolve? TaaResolve;
     public FSR2Wrapper? FSR2Wrapper;
 
@@ -159,6 +161,12 @@ class RasterPipeline : IDisposable
     public bool IsMotionBlur;
     public bool IsVXGI;
     public bool IsVariableRateShading;
+    
+    // ▼▼▼ [추가] GUI에서 껐다 켰다 할 스위치 ▼▼▼
+    public bool IsFrequencyVRS;
+    public float EdgeThreshold = 0.15f; 
+    public float HighRateRatio = 0.15f; 
+    public float MedRateRatio = 0.05f;
 
     // Voxelization Settings
     public bool IsConfigureGridMode;
@@ -211,8 +219,13 @@ class RasterPipeline : IDisposable
     {
         SSAO = new SSAO(renderSize, new SSAO.GpuSettings());
         SSR = new SSR(renderSize, new SSR.GpuSettings());
-        MotionBlur = new MotionBlur(renderSize, new MotionBlur.GpuSettings()); // ← 추가
+        MotionBlur = new MotionBlur(renderSize, new MotionBlur.GpuSettings());
         LightingVRS = new LightingShadingRateClassifier(renderSize, new LightingShadingRateClassifier.GpuSettings());
+        
+        // ▼▼▼ [추가] 주파수 맵 초기화 ▼▼▼
+        FrequencyVRS = new FrequencyMap(renderSize, new FrequencyMap.GpuSettings());
+        IsFrequencyVRS = false;
+
         Voxelizer = new Voxelizer(256, 256, 256, new Vector3(-28.0f, -3.0f, -17.0f), new Vector3(28.0f, 20.0f, 17.0f));
         ConeTracer = new ConeTracer(renderSize, new ConeTracer.GpuSettings());
 
@@ -319,7 +332,6 @@ class RasterPipeline : IDisposable
                 Voxelizer.GridMax = quantizedMax;
             }
 
-            // Reset instance count, don't want to miss meshes when voxelizing
             for (int i = 0; i < modelManager.DrawCommands.Length; i++)
             {
                 ref readonly GpuMesh mesh = ref modelManager.Meshes[i];
@@ -417,11 +429,6 @@ class RasterPipeline : IDisposable
             });
         }
 
-        // The AMD driver fails to detect a write-read dependency between G-Buffer and some of the
-        // following passes like RayTraced shadows. Likely because the G-Buffer is bindless textures.
-        // TextureBarrier fixes it only on newer drivers (somewhere arround 24.9.2 RC1)
-        // Flush works on both older and newer driver.
-        // See discussion https://discord.com/channels/318590007881236480/318783155744145411/1070453712021098548
         if (BBG.GetDeviceInfo().Vendor == BBG.GpuVendor.AMD)
         {
             BBG.Cmd.Flush();
@@ -452,7 +459,8 @@ class RasterPipeline : IDisposable
         }, new BBG.Rendering.GraphicsPipelineState()
         {
             EnabledCapabilities = [BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)],
-            VariableRateShading = LightingVRS.GetRenderData(),
+            // ▼▼▼ [수정] 스위치에 따라 포비티드와 주파수 맵을 번갈아 바인딩 ▼▼▼
+            VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
         }, () =>
         {
             deferredLightingProgram.Upload("ShadowMode", (uint)ShadowMode_);
@@ -460,6 +468,9 @@ class RasterPipeline : IDisposable
 
             BBG.Cmd.BindTextureUnit(SSAO.Result, 0, IsSSAO);
             BBG.Cmd.BindTextureUnit(ConeTracer.Result, 1, IsVXGI);
+
+            BBG.Cmd.BindTextureUnit(FrequencyVRS.Result, 10);
+
             BBG.Cmd.UseShaderProgram(deferredLightingProgram);
 
             BBG.Rendering.InferViewportSize();
@@ -485,7 +496,8 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.Capability.CullFace,
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
-            VariableRateShading = LightingVRS.GetRenderData(),
+            // ▼▼▼ [수정] ▼▼▼
+           VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
         }, () =>
         {
             BBG.Rendering.InferViewportSize();
@@ -512,7 +524,8 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
             DepthFunction = BBG.Rendering.DepthFunction.Lequal,
-            VariableRateShading = LightingVRS.GetRenderData(),
+            // ▼▼▼ [수정] ▼▼▼
+           VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
         }, () =>
         {
             BBG.Cmd.UseShaderProgram(skyBoxProgram);
@@ -552,7 +565,8 @@ class RasterPipeline : IDisposable
                 ],
                 EnableDepthWrites = false,
                 FillMode = IsWireframe ? BBG.Rendering.FillMode.Line : BBG.Rendering.FillMode.Fill,
-                VariableRateShading = LightingVRS.GetRenderData(),
+                // ▼▼▼ [수정] ▼▼▼
+                VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
             },
             () =>
             {
@@ -591,38 +605,44 @@ class RasterPipeline : IDisposable
             BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit);
         });
 
-        /*
         if (IsVariableRateShading || LightingVRS.Settings.DebugValue != LightingShadingRateClassifier.DebugMode.None)
         {
-            LightingVRS.Compute(beforeTAATexture);
-        }*/
-
-        if (IsVariableRateShading || LightingVRS.Settings.DebugValue != LightingShadingRateClassifier.DebugMode.None)
-        {
-            // 1. 현재 설정을 가져옵니다 (구조체 복사)
-            var mySettings = LightingVRS.Settings;
-
-            // 2. 마우스 위치 계산 & 적용
-            if (mousePos.X >= 0)
+            if (IsFrequencyVRS)
             {
-                Vector2 normalizedMouse = mousePos / windowSize;
-
-                // (중요) Y축이 뒤집혀 있을 수 있으니, 마우스가 위아래 반대로 움직이면 주석을 푸세요
-                normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
-
-                mySettings.MousePos = normalizedMouse;
+                // [수정 완료] 시각화 모드 ON/OFF 상관없이, 무조건 굴곡이 확실한 NormalTexture로 엣지를 잡습니다!
+                // 이렇게 해야 셰이더의 rg 채널 수학 공식이 완벽하게 들어맞습니다.
+                FrequencyVRS.Compute(NormalTexture, EdgeThreshold, HighRateRatio, MedRateRatio); 
             }
-
-            // ▼▼▼ [핵심] 스위치 강제로 켜기! (이게 없어서 안 된 겁니다) ▼▼▼
-            mySettings.IsFoveated = 1;
-
-            // 3. 변경된 설정을 다시 엔진에 덮어씌우기 (매우 중요!)
-            LightingVRS.Settings = mySettings;
-
-            // 4. 쉐이더 실행
-            LightingVRS.Compute(beforeTAATexture);
+            else
+            {
+                // 기존 포비티드 VRS 계산
+                var mySettings = LightingVRS.Settings;
+                if (mousePos.X >= 0)
+                {
+                    Vector2 normalizedMouse = mousePos / windowSize;
+                    normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
+                    mySettings.MousePos = normalizedMouse;
+                }
+                mySettings.IsFoveated = 1;
+                LightingVRS.Settings = mySettings;
+                LightingVRS.Compute(beforeTAATexture);
+            }
         }
-
+            else
+            {
+                // 기존 포비티드 VRS 계산
+                var mySettings = LightingVRS.Settings;
+                if (mousePos.X >= 0)
+                {
+                    Vector2 normalizedMouse = mousePos / windowSize;
+                    normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
+                    mySettings.MousePos = normalizedMouse;
+                }
+                mySettings.IsFoveated = 1;
+                LightingVRS.Settings = mySettings;
+                LightingVRS.Compute(beforeTAATexture);
+            }
+        
         if (IsMotionBlur)
         {
             MotionBlur.Compute(beforeTAATexture, beforeTAATexture);
@@ -652,11 +672,10 @@ class RasterPipeline : IDisposable
         {
             FSR2Wrapper.Run(beforeTAATexture, DepthTexture, VelocityTexture, camera, gpuTaaData.Jitter, dT * 1000.0f);
 
-            // This is a hack to fix global UBO bindings modified by FSR2
-            lightManager.FSR2WorkaroundRebindUBO(); // binding 3
+            lightManager.FSR2WorkaroundRebindUBO(); 
             taaDataBuffer.BindToBufferBackedBlock(BBG.Buffer.BufferBackedBlockTarget.Uniform, 4);
-            SkyBoxManager.FSR2WorkaroundRebindUBO(); // binding 5
-            Voxelizer.FSR2WorkaroundRebindUBO(); // binding 6
+            SkyBoxManager.FSR2WorkaroundRebindUBO(); 
+            Voxelizer.FSR2WorkaroundRebindUBO(); 
         }
     }
 
@@ -670,9 +689,12 @@ class RasterPipeline : IDisposable
 
         SSAO.SetSize(renderSize);
         SSR.SetSize(renderSize);
-        MotionBlur.SetSize(renderSize); // ← 추가
+        MotionBlur.SetSize(renderSize);
         LightingVRS.SetSize(renderSize);
         ConeTracer.SetSize(renderSize);
+        
+        // ▼▼▼ [추가] 화면 크기에 맞춰 주파수 맵도 리사이즈 ▼▼▼
+        FrequencyVRS.SetSize(renderSize);
 
         if (beforeTAATexture != null) beforeTAATexture.Dispose();
         beforeTAATexture = new BBG.Texture(BBG.Texture.Type.Texture2D);
@@ -762,10 +784,13 @@ class RasterPipeline : IDisposable
 
         SSAO.Dispose();
         SSR.Dispose();
-        MotionBlur.Dispose(); // ← 추가
+        MotionBlur.Dispose();
         LightingVRS.Dispose();
         Voxelizer.Dispose();
         ConeTracer.Dispose();
+        
+        // ▼▼▼ [추가] 주파수 맵 메모리 해제 ▼▼▼
+        FrequencyVRS.Dispose();
 
         resolveTransparentProgram.Dispose();
         recordTransparentProgram.Dispose();

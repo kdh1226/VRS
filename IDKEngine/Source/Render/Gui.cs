@@ -656,7 +656,7 @@ partial class Gui : IDisposable
                         }
                     }
                 }
-
+                
                 if (ImGui.CollapsingHeader("Variable Rate Shading"))
                 {
                     ImGui.Text($"NV_shading_rate_image: {LightingShadingRateClassifier.IS_SUPPORTED}");
@@ -666,7 +666,60 @@ partial class Gui : IDisposable
                         "invocations in regions where less detail may be required."
                     );
 
-                    CheckBoxEnabled("IsVariableRateShading", ref app.RasterizerPipeline.IsVariableRateShading, LightingShadingRateClassifier.IS_SUPPORTED);
+                    if (CheckBoxEnabled("IsVariableRateShading", ref app.RasterizerPipeline.IsVariableRateShading, LightingShadingRateClassifier.IS_SUPPORTED))
+                    {
+                        resetPathTracer = true;
+                    }
+
+                    if (app.RasterizerPipeline.IsVariableRateShading)
+                    {
+                        ImGui.Indent();
+
+                        if (ImGui.Checkbox("Use Frequency Map (Content-Adaptive)", ref app.RasterizerPipeline.IsFrequencyVRS))
+                        {
+                            resetPathTracer = true;
+                        }
+                        ToolTipForItemAboveHovered("Turn ON for Frequency-based VRS, Turn OFF for Foveated VRS.");
+
+                    if (app.RasterizerPipeline.IsFrequencyVRS)
+                        {
+                            ImGui.Indent();
+
+                            tempBool = app.RasterizerPipeline.FrequencyVRS.Settings.VisualMode != 0;
+                            if (ImGui.Checkbox("Enable Visualization Mode", ref tempBool))
+                            {
+                                app.RasterizerPipeline.FrequencyVRS.Settings.VisualMode = tempBool ? 1 : 0;
+                                resetPathTracer = true;
+                            }
+                            ToolTipForItemAboveHovered("Visualizes the frequency content with colors (Green/Yellow/Red).");
+
+                            // --- [새로 추가된 소벨 필터용 슬라이더 3형제] ---
+                            ImGui.SeparatorText("Sobel Edge Detection");
+                            
+                            // 1. 엣지 판별 기준 (빛 노이즈 억제력)
+                            ImGui.SliderFloat("Edge Gradient Threshold", ref app.RasterizerPipeline.EdgeThreshold, 0.01f, 1.0f, "%.3f");
+                            ToolTipForItemAboveHovered("Higher values ignore noise and only detect strong outlines as edges."); // 한글을 영어로 변경!
+
+                            // 2. 고화질(빨강) 등급 부여 기준 (15% 추천)
+                            ImGui.SliderFloat("1x1 (Red) Ratio", ref app.RasterizerPipeline.HighRateRatio, 0.0f, 0.5f, "%.3f");
+                            
+                            // 3. 중화질(노랑) 등급 부여 기준 (5% 추천)
+                            ImGui.SliderFloat("2x2 (Yellow) Ratio", ref app.RasterizerPipeline.MedRateRatio, 0.0f, 0.5f, "%.3f");
+
+                            // 조작 실수 방어: 빨강 기준이 노랑 기준보다 낮아지면 꼬이니까 막아줍니다.
+                            if (app.RasterizerPipeline.HighRateRatio < app.RasterizerPipeline.MedRateRatio)
+                            {
+                                app.RasterizerPipeline.HighRateRatio = app.RasterizerPipeline.MedRateRatio;
+                            }
+                            // ---------------------------------------------------
+
+                            ImGui.Unindent();
+                        }
+                    }
+
+                                
+                   
+    
 
                     if (ImGui.BeginCombo("DebugMode", app.RasterizerPipeline.LightingVRS.Settings.DebugValue.ToString()))
                     {
