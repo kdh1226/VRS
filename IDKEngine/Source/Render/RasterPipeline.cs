@@ -278,7 +278,7 @@ class RasterPipeline : IDisposable
         AntiAliasingMode_ = AntiAliasingMode.TAA;
     }
 
-    public void Render(ModelManager modelManager, LightManager lightManager, Camera camera, float dT, Vector2 mousePos, Vector2 windowSize)
+    public void Render(ModelManager modelManager, LightManager lightManager, Camera camera, float dT, Vector2 mousePos, Vector2 windowSize, bool isScopeMode)
     {
         // Update Temporal AntiAliasing stuff
         {
@@ -623,7 +623,7 @@ class RasterPipeline : IDisposable
                     normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
                     mySettings.MousePos = normalizedMouse;
                 }
-                mySettings.IsFoveated = 1;
+                mySettings.IsFoveated = isScopeMode ? 1 : 0;
                 LightingVRS.Settings = mySettings;
                 LightingVRS.Compute(beforeTAATexture);
             }
