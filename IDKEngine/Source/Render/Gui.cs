@@ -39,10 +39,34 @@ partial class Gui : IDisposable
     private readonly Queue<IDisposable> frameDeletionQueue;
     private SysVec2 viewportHeaderSize;
     private float clickedEntityDistance;
-    public Gui(Vector2i windowSize)
+
+    private BBG.Texture scopeTexture; // 추가: 스코프 텍스처 보관용 변수
+
+    public unsafe Gui(Vector2i windowSize)
     {
         guiBackend = new ImGuiBackend(windowSize, "Resource/imgui.ini");
         frameDeletionQueue = new Queue<IDisposable>();
+
+        ImageLoader.ImageResult scopeImage = ImageLoader.Load("Resource/Textures/scope.png", ImageLoader.ColorComponents.RGBA);
+
+        if (scopeImage.IsLoadedSuccesfully)
+        {
+            // OpenGL 텍스처 생성 및 세팅
+            scopeTexture = new BBG.Texture(BBG.Texture.Type.Texture2D);
+            scopeTexture.SetFilter(BBG.Sampler.MinFilter.Linear, BBG.Sampler.MagFilter.Linear);
+            scopeTexture.Allocate(scopeImage.Header.Width, scopeImage.Header.Height, 1, BBG.Texture.InternalFormat.R8G8B8A8Unorm);
+
+            // 메모리에 있는 이미지 픽셀을 그래픽카드로 업로드
+            scopeTexture.Upload2D(scopeImage.Header.Width, scopeImage.Header.Height, BBG.Texture.PixelFormat.RGBA, BBG.Texture.PixelType.UByte, scopeImage.Memory);
+
+            // 다 쓴 RAM 메모리 해제
+            scopeImage.Dispose();
+        }
+        else
+        {
+            BBLogger.Logger.Log(BBLogger.Logger.LogLevel.Warn, "스코프 이미지를 불러오지 못했습니다. 경로를 확인하세요.");
+        }
+
     }
 
     public void Draw(Application app, float dT)
@@ -1474,6 +1498,15 @@ partial class Gui : IDisposable
             viewportHeaderSize = ImGui.GetWindowPos() + tileBar;
 
             ImGui.Image(app.TonemapAndGamma.Result.ID, content.ToNumerics(), new SysVec2(0.0f, 1.0f), new SysVec2(1.0f, 0.0f));
+
+            // 스코프 텍스처 덮어씌우기
+            if (app.IsScopeMode && scopeTexture != null)
+            {
+                ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+                SysVec2 min = ImGui.GetItemRectMin();
+                SysVec2 max = ImGui.GetItemRectMax();
+                drawList.AddImage((nint)scopeTexture.ID, min, max, new SysVec2(0, 1), new SysVec2(1, 0));
+            }
         }
         ImGui.PopStyleVar();
         ImGui.End();
@@ -1541,6 +1574,7 @@ partial class Gui : IDisposable
     public void Dispose()
     {
         guiBackend.Dispose();
+        scopeTexture?.Dispose();
     }
 
     private static void Test(Application app)
