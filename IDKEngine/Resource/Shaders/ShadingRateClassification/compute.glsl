@@ -50,7 +50,15 @@ void main()
         float stdDev = sqrt(variance);
         float coeffOfVariation = (luminanceMean > 0.001) ? (stdDev / luminanceMean) : 0.0;
 
-        // [STEP 1] 무조건 기존 엔진 로직(LumVarianceFactor)으로 기본 화질을 계산합니다.
+        ivec2 tileCenter = ivec2(gl_WorkGroupID.xy * TILE_SIZE + (TILE_SIZE / 2));
+        float rawDepth = texelFetch(gBufferDataUBO.Depth, tileCenter, 0).r;
+        
+        float zNear = perFrameDataUBO.NearPlane;
+        float zFar = perFrameDataUBO.FarPlane;
+        float ndc = rawDepth * 2.0 - 1.0;
+
+        float linearDepth = (2.0 * zNear * zFar) / (zFar + zNear - ndc * (zFar - zNear));
+
         uint originalEngineRate;
         if (luminanceMean <= 0.001)
         {
@@ -67,29 +75,50 @@ void main()
 
         uint finalRateValue;
 
-        // [STEP 2] 포비티드 스위치와 결합 (하이브리드)
-        if (settingsUBO.IsFoveated == 1)
+        if (settingsUBO.IsFoveated == 1) 
         {
+            // 현재 화면 위치
             vec2 normalizedPos = vec2(gl_WorkGroupID.xy) / vec2(gl_NumWorkGroups.xy);
-            float dist = distance(normalizedPos, settingsUBO.MousePos);
+            
+            // 화면 정중앙으로부터 얼마나 떨어져있는지 계산
+            vec2 diff = normalizedPos - vec2(0.5, 0.5);
+            
+            vec2 res = textureSize(SamplerShaded, 0); 
+            float aspect = res.x / res.y;
+            diff.x *= aspect; 
+            
+            float circularDist = length(diff);
 
-            if (dist < 0.15)
+            // 스코프 안쪽
+            if (circularDist < 0.45) 
             {
-                // 마우스 근처(시선 집중 영역): 무슨 일이 있어도 최고화질(1x1) 유지!
                 finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
             }
-            else
+            // 스코프 바깥쪽
+            else 
             {
-                // 마우스 바깥 영역: 엔진이 지능적으로 판단한(슬라이더 적용된) 화질을 사용!
-                finalRateValue = originalEngineRate;
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
             }
         }
         else
         {
-            // 스위치를 끄면 그냥 순수 엔진 로직
             finalRateValue = originalEngineRate;
-        }
 
+            if (linearDepth > 30.0) 
+            {
+                if (finalRateValue < ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV) {
+                    finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
+                }
+            }
+            if (linearDepth > 80.0) 
+            {
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+            }
+            if (coeffOfVariation > 0.05) 
+            {
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
+            }
+        }
         imageStore(ImgResult, ivec2(gl_WorkGroupID.xy), uvec4(finalRateValue));
 
         if (settingsUBO.DebugMode == ENUM_DEBUG_MODE_SPEED)
