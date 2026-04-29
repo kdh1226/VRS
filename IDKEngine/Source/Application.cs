@@ -134,6 +134,46 @@ class Application : GameWindowBase
         : base(width, height, title, 4, 6)
     {
     }
+    // 단계별 해상도
+    public int GraphicsLevel = 4;
+
+    public void SetGraphicsQuality(int level)
+    {
+        GraphicsLevel = level;
+        switch (level)
+        {
+            case 1: // Very Low
+                RequestRenderResolutionScale = 0.500f;
+                IsBloom = false;
+                IsVolumetricLighting = false;
+                break;
+            case 2: // Low
+                RequestRenderResolutionScale = 0.625f;
+                IsBloom = true;
+                IsVolumetricLighting = false;
+                break;
+            case 3: // Medium
+                RequestRenderResolutionScale = 0.750f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 4: // High - Default
+                RequestRenderResolutionScale = 0.875f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 5: // Very High
+                RequestRenderResolutionScale = 1.000f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+        }
+
+        // Display in console window (or log) that quality has changed
+        Console.WriteLine($"[System] Graphics Quality Changed to Level {level}");
+    }
+
+    public bool IsScopeMode = false;
 
     protected override void OnRender(float dT)
     {
@@ -183,7 +223,7 @@ class Application : GameWindowBase
         {
             //RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT);
             // ▼▼▼ MouseState.Position이랑 WindowFramebufferSize를 택배로 보냅니다! ▼▼▼
-            RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT, MouseState.Position, new Vector2(WindowFramebufferSize.X, WindowFramebufferSize.Y));
+            RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT, MouseState.Position, new Vector2(WindowFramebufferSize.X, WindowFramebufferSize.Y), IsScopeMode);
             if (RasterizerPipeline.IsConfigureGridMode)
             {
                 TonemapAndGamma.Compute(RasterizerPipeline.Result);
@@ -341,6 +381,24 @@ class Application : GameWindowBase
                     MouseState.CursorMode = CursorModeValue.CursorDisabled;
                 }
             }
+        }
+
+        if (KeyboardState[Keys.F1] == Keyboard.InputState.Touched) SetGraphicsQuality(1);
+        if (KeyboardState[Keys.F2] == Keyboard.InputState.Touched) SetGraphicsQuality(2);
+        if (KeyboardState[Keys.F3] == Keyboard.InputState.Touched) SetGraphicsQuality(3);
+        if (KeyboardState[Keys.F4] == Keyboard.InputState.Touched) SetGraphicsQuality(4);
+        if (KeyboardState[Keys.F5] == Keyboard.InputState.Touched) SetGraphicsQuality(5);
+
+        // 스코프 모드
+        IsScopeMode = MouseState.IsButtonDown(MouseButton.Right);
+
+        if (IsScopeMode)
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(20.0f);
+        }
+        else
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(67.0f);
         }
 
         if (RecorderVars.State != FrameRecorderState.Replaying)
