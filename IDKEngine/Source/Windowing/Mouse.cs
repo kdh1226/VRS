@@ -106,4 +106,8 @@ public unsafe class Mouse
         ScrollX += y;
         scrollUpdateState = ScrollState.Changed;
     }
+    internal bool IsButtonDown(MouseButton button)
+    {
+        return buttonStates[(int)button] != Keyboard.InputState.Released;
+    }
 }
