@@ -75,7 +75,26 @@ void main()
 
         uint finalRateValue;
 
-        if (settingsUBO.IsFoveated == 1) 
+        if (settingsUBO.IsFoveated == 1)
+        {
+            vec2 normalizedPos = vec2(gl_WorkGroupID.xy) / vec2(gl_NumWorkGroups.xy);
+            vec2 res = textureSize(SamplerShaded, 0); 
+            float aspect = res.x / res.y;
+            
+            vec2 diff = normalizedPos - settingsUBO.MousePos;
+            diff.x *= aspect; 
+            float dist = length(diff);
+            
+            if (dist < 0.15) 
+            {
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
+            }
+            else 
+            {
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+            }
+        }
+        else if (settingsUBO.IsFoveated == 2) 
         {
             // 현재 화면 위치
             vec2 normalizedPos = vec2(gl_WorkGroupID.xy) / vec2(gl_NumWorkGroups.xy);
