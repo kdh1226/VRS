@@ -122,6 +122,20 @@ class Application : GameWindowBase
 
     public bool TimeEnabled;
 
+    public bool IsSequenceMode = false;
+    private float sequenceTimer = 0.0f;
+    
+    private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
+    {
+        (0.0f,  new Vector3(-13.5f, 6.5f, -0.5f),  0.0f, 120.0f),
+        (5.0f,  new Vector3(-10.0f, 1.2f, -0.5f),  0.0f,  95.0f),
+        (10.0f, new Vector3(-1.0f, 0.4f, -3.4f),   90.0f,  70.0f),
+        (15.0f, new Vector3(4.4f, 1.3f, 0.0f),    180.0f,  85.0f),
+        (20.0f, new Vector3(-1.7f, 2.0f, 2.3f),   270.0f,  65.0f),
+        (25.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f),
+        (28.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f)
+    };
+
     private GpuPerFrameData gpuPerFrameData;
     private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
 
@@ -342,6 +356,60 @@ class Application : GameWindowBase
             ShouldClose();
         }
 
+        if (KeyboardState[Keys.F12] == Keyboard.InputState.Touched) //스크린샷
+        {
+            string folderPath = "Screenshots";
+            System.IO.Directory.CreateDirectory(folderPath);
+            
+            string fileName = $"{folderPath}/Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+            
+            Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+        }
+
+        if (KeyboardState[Keys.L] == Keyboard.InputState.Touched)// 광원 추가
+        {
+            int lightsToAdd = 5;
+            for (int i = 0; i < lightsToAdd; i++)
+            {
+                Vector3 pos = new Vector3(RNG.RandomFloat(-5.0f, 5.0f), 2.0f, RNG.RandomFloat(-2.0f, 2.0f));
+                Vector3 color = RNG.RandomVec3(20.0f, 60.0f); 
+                CpuLight newLight = new CpuLight(pos, color, 0.4f);
+                
+                newLight.Velocity = new Vector3(
+                    RNG.RandomFloat(-15.0f, 15.0f),
+                    RNG.RandomFloat(-5.0f, 10.0f),
+                    RNG.RandomFloat(-15.0f, 15.0f)
+                );
+
+                if (LightManager.AddLight(newLight))
+                {
+                    int newLightIndex = LightManager.Count - 1;
+                    CpuPointShadow pointShadow = new CpuPointShadow(256, RenderResolution, new Vector2(newLight.GpuLight.Radius, 60.0f));
+                    if (!LightManager.CreatePointShadowForLight(pointShadow, newLightIndex))
+                    {
+                        pointShadow.Dispose();
+                    }
+                }
+            }
+            Console.WriteLine($"라이트 5개 생성\n현재 총 광원 수: {LightManager.Count}");
+        }
+
+        if (KeyboardState[Keys.K] == Keyboard.InputState.Touched) //광원 삭제
+        {
+            int baseLightCount = 3;
+
+            while (LightManager.Count > baseLightCount)
+            {
+                LightManager.DeleteLight(LightManager.Count - 1);
+            }
+        }
+
+        if (KeyboardState[Keys.D2] == Keyboard.InputState.Touched) //시퀀스 모드
+        {
+            IsSequenceMode = !IsSequenceMode;
+            sequenceTimer = 0.0f;
+        }
+
         if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
         {
             if (KeyboardState[Keys.V] == Keyboard.InputState.Touched)
@@ -432,20 +500,56 @@ class Application : GameWindowBase
                 animationTime += dT;
             }
 
-            if (MouseState.CursorMode == CursorModeValue.CursorDisabled)
+            if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
-                Camera.ProcessInputs(KeyboardState, MouseState);
-                Camera.AdvanceSimulation(dT);
+                sequenceTimer += dT;
+                float maxTime = waypoints[^1].Time;
 
-                if (MouseState[MouseButton.Button5] != Keyboard.InputState.Pressed)
+                if (sequenceTimer > maxTime) 
                 {
-                    Camera.CollisionDetection(ModelManager);
+                    sequenceTimer = 0.0f;
+                }
+
+                for (int i = 0; i < waypoints.Length - 1; i++)
+                {
+                    if (sequenceTimer >= waypoints[i].Time && sequenceTimer <= waypoints[i + 1].Time)
+                    {
+                        float t = (sequenceTimer - waypoints[i].Time) / (waypoints[i + 1].Time - waypoints[i].Time);
+
+                        Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
+                        Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
+                        Camera.Pitch = MathHelper.Lerp(waypoints[i].Pitch, waypoints[i + 1].Pitch, t);
+                        
+                        Camera.Velocity = Vector3.Zero; 
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled)
+                {
+                    Camera.ProcessInputs(KeyboardState, MouseState);
+                    Camera.AdvanceSimulation(dT);
+
+                    if (MouseState[MouseButton.Button5] != Keyboard.InputState.Pressed)
+                    {
+                        Camera.CollisionDetection(ModelManager);
+                    }
                 }
             }
 
             if (TimeEnabled)
             {
                 LightManager.AdvanceSimulation(dT);
+
+                for (int i = 0; i < LightManager.Count; i++)
+                {
+                    if (LightManager.TryGetLight(i, out CpuLight light) && light.GpuLight.Position.Y > 15.0f)
+                    {
+                        light.Velocity = new Vector3(light.Velocity.X, -Math.Abs(light.Velocity.Y), light.Velocity.Z);
+                    }
+                }
             }
 
             LightManager.CollisionDetection(ModelManager);
