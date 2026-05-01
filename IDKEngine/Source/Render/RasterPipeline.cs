@@ -623,25 +623,11 @@ class RasterPipeline : IDisposable
                     normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
                     mySettings.MousePos = normalizedMouse;
                 }
-                mySettings.IsFoveated = isScopeMode ? 1 : 0;
+                mySettings.IsFoveated = isScopeMode ? 2 : 1;
                 LightingVRS.Settings = mySettings;
                 LightingVRS.Compute(beforeTAATexture);
             }
         }
-            else
-            {
-                // 기존 포비티드 VRS 계산
-                var mySettings = LightingVRS.Settings;
-                if (mousePos.X >= 0)
-                {
-                    Vector2 normalizedMouse = mousePos / windowSize;
-                    normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
-                    mySettings.MousePos = normalizedMouse;
-                }
-                mySettings.IsFoveated = 1;
-                LightingVRS.Settings = mySettings;
-                LightingVRS.Compute(beforeTAATexture);
-            }
         
         if (IsMotionBlur)
         {
