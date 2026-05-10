@@ -382,6 +382,38 @@ partial class Gui : IDisposable
             ImGui.SliderFloat("Exposure", ref app.TonemapAndGamma.Settings.Exposure, 0.0f, 8.0f);
             ImGui.SliderFloat("Saturation", ref app.TonemapAndGamma.Settings.Saturation, 0.0f, 1.5f);
 
+            ImGui.Separator();
+
+            // 1. 필름 그레인 체크박스 및 슬라이더 (int <-> bool 변환)
+            bool isFilmGrain = app.TonemapAndGamma.Settings.IsFilmGrain == 1;
+            if (ImGui.Checkbox("IsFilmGrain", ref isFilmGrain))
+            {
+                app.TonemapAndGamma.Settings.IsFilmGrain = isFilmGrain ? 1 : 0;
+            }
+
+            if (isFilmGrain)
+            {
+                ImGui.Indent();
+                ImGui.SliderFloat("IsGrainStrength", ref app.TonemapAndGamma.Settings.FilmGrainStrength, 0.0f, 0.2f);
+                ImGui.Unindent();
+            }
+
+            ImGui.Spacing(); // 약간의 여백 추가
+
+            // 2. 색수차 체크박스 및 슬라이더
+            bool useCA = app.TonemapAndGamma.Settings.IsChromaticAberration == 1;
+            if (ImGui.Checkbox("IsChromaticAberration", ref useCA))
+            {
+                app.TonemapAndGamma.Settings.IsChromaticAberration = useCA ? 1 : 0;
+            }
+
+            if (useCA)
+            {
+                ImGui.Indent();
+                ImGui.SliderFloat("CA Strength", ref app.TonemapAndGamma.Settings.ChromaticAberrationStrength, 0.0f, 0.5f);
+                ImGui.Unindent();
+            }
+
             tempFloat = app.RenderResolutionScale;
             if (ImGui.SliderFloat("ResolutionScale", ref tempFloat, 0.1f, 1.0f))
             {
