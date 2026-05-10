@@ -16,6 +16,14 @@ class TonemapAndGammaCorrect : IDisposable
         public float Compression = 0.1f;
         public bool DoTonemapAndSrgbTransform = true;
 
+        public int IsFilmGrain = 1;
+        public int IsChromaticAberration = 1;
+
+        public float FilmGrainStrength = 0.05f; // 기본 강도 5%
+        public float Time = 0.0f;
+
+        public float ChromaticAberrationStrength = 0.1f; // 기본 강도
+
         public GpuSettings()
         {
         }
@@ -25,6 +33,9 @@ class TonemapAndGammaCorrect : IDisposable
 
     public BBG.Texture Result;
     private readonly BBG.AbstractShaderProgram tonemapAndGammaCorrecterProgram;
+
+    private float currentTime = 0.0f;
+
     public TonemapAndGammaCorrect(Vector2i size, in GpuSettings settings)
     {
         tonemapAndGammaCorrecterProgram = new BBG.AbstractShaderProgram(BBG.AbstractShader.FromFile(BBG.ShaderStage.Compute, "TonemapAndGammaCorrect/compute.glsl"));
@@ -36,6 +47,10 @@ class TonemapAndGammaCorrect : IDisposable
 
     public void Compute(BBG.Texture texture0 = null, BBG.Texture texture1 = null, BBG.Texture texture2 = null)
     {
+
+        currentTime += 0.016f; // 약 60fps 기준
+        Settings.Time = currentTime;
+
         BBG.Computing.Compute("Merge Textures and do Tonemapping + Gamma Correction", () =>
         {
             BBG.Cmd.SetUniforms(Settings);
