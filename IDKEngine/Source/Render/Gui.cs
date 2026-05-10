@@ -384,7 +384,7 @@ partial class Gui : IDisposable
 
             ImGui.Separator();
 
-            // 1. 필름 그레인 체크박스 및 슬라이더 (int <-> bool 변환)
+            // 1. 필름 그레인
             bool isFilmGrain = app.TonemapAndGamma.Settings.IsFilmGrain == 1;
             if (ImGui.Checkbox("IsFilmGrain", ref isFilmGrain))
             {
@@ -398,9 +398,9 @@ partial class Gui : IDisposable
                 ImGui.Unindent();
             }
 
-            ImGui.Spacing(); // 약간의 여백 추가
+            ImGui.Spacing();
 
-            // 2. 색수차 체크박스 및 슬라이더
+            // 2. 색수차
             bool useCA = app.TonemapAndGamma.Settings.IsChromaticAberration == 1;
             if (ImGui.Checkbox("IsChromaticAberration", ref useCA))
             {
