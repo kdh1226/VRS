@@ -15,11 +15,23 @@ layout(std140, binding = 0) uniform SettingsUBO
     float Peak;
     float Compression;
     bool DoTonemapAndSrgbTransform;
+
+    int IsFilmGrain;
+    int IsChromaticAberration;
+
+    float FilmGrainStrength;
+    float Time;
+
+    float ChromaticAberrationStrength;
 } settingsUBO;
 
 vec3 LinearToSrgb(vec3 rgb);
 vec3 AgX_DS(vec3 color_srgb, float exposure, float saturation, float linear, float peak, float compression);
 vec3 Dither(vec3 color, ivec2 imgCoord);
+
+float random(vec2 uv) {
+    return fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453123);
+}
 
 void main()
 {
@@ -27,9 +39,21 @@ void main()
     vec2 uv = (imgCoord + 0.5) / imageSize(ImgResult);
 
     vec3 hdrColor = vec3(0.0);
-    hdrColor += texture(Sampler0, uv).rgb;
-    hdrColor += texture(Sampler1, uv).rgb;
-    hdrColor += texture(Sampler2, uv).rgb;
+    if (settingsUBO.IsChromaticAberration == 1)
+    {
+        vec2 centerDist = uv - 0.5;
+        vec2 caOffset = centerDist * dot(centerDist, centerDist) * settingsUBO.ChromaticAberrationStrength;
+
+        hdrColor.r += texture(Sampler0, uv + caOffset).r + texture(Sampler1, uv + caOffset).r + texture(Sampler2, uv + caOffset).r;
+        hdrColor.g += texture(Sampler0, uv).g            + texture(Sampler1, uv).g            + texture(Sampler2, uv).g;
+        hdrColor.b += texture(Sampler0, uv - caOffset).b + texture(Sampler1, uv - caOffset).b + texture(Sampler2, uv - caOffset).b;
+    }
+    else
+    {
+        hdrColor += texture(Sampler0, uv).rgb;
+        hdrColor += texture(Sampler1, uv).rgb;
+        hdrColor += texture(Sampler2, uv).rgb;
+    }
 
     vec3 ldrColor;
     if (settingsUBO.DoTonemapAndSrgbTransform)
@@ -49,6 +73,15 @@ void main()
     else
     {
         srgbColor = ldrColor;
+    }
+
+    if (settingsUBO.IsFilmGrain == 1 && settingsUBO.FilmGrainStrength > 0.0)
+    {
+        // 0.0 ~ 1.0 사이의 난수를 -1.0 ~ 1.0 범위로 변환
+        float noise = (random(uv + mod(settingsUBO.Time, 100.0)) - 0.5) * 2.0;
+        
+        // 현재 색상에 비례하게 노이즈를 섞어 자연스러운 입자감 생성
+        srgbColor += srgbColor * noise * settingsUBO.FilmGrainStrength;
     }
 
     vec3 ditherdColor = Dither(srgbColor, imgCoord);
