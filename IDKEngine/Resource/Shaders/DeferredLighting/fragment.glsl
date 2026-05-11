@@ -63,8 +63,17 @@ void main()
             {
                 GpuPointShadow pointShadow = shadowsUBO.PointShadows[light.PointShadowIndex];
                 vec3 lightToSample = unjitteredFragPos - light.Position;
-                float visibility = Visibility(pointShadow, surface.Normal, lightToSample);
-                contribution *= visibility;
+                float pcfVisibility = 0.0;
+                const int pcfMultiplier = 50; 
+
+                for(int v = 0; v < pcfMultiplier; v++)
+                {
+                    vec3 jitter = vec3(float(v) * 0.002, float(v) * -0.001, float(v) * 0.002);
+                    pcfVisibility += Visibility(pointShadow, surface.Normal, lightToSample + jitter);
+                }
+                pcfVisibility /= float(pcfMultiplier); 
+
+                contribution *= pcfVisibility;
             }
             else if (ShadowMode == ENUM_SHADOW_MODE_RAY_TRACED)
             {
