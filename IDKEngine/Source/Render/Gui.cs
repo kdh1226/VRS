@@ -711,8 +711,8 @@ partial class Gui : IDisposable
                             app.VolumetricLight.Settings.Absorbance = temp;
                         }
                     }
-                }
-                
+                }            
+
                 if (ImGui.CollapsingHeader("Variable Rate Shading"))
                 {
                     ImGui.Text($"NV_shading_rate_image: {LightingShadingRateClassifier.IS_SUPPORTED}");
@@ -731,13 +731,35 @@ partial class Gui : IDisposable
                     {
                         ImGui.Indent();
 
+                        var vrsSettings = app.RasterizerPipeline.LightingVRS.Settings;
+
+                        // [2] 포비티드 렌더링
+                        ImGui.SeparatorText("Foveated Rendering");
+                        if (ImGui.Checkbox("IsFoveated", ref app.RasterizerPipeline.IsFoveated))
+                        {
+                            resetPathTracer = true;
+                        }
+                        ToolTipForItemAboveHovered("Enables foveated rendering. Higher quality at focus, lower at periphery.");
+
+                        // ------------------------------------------------------------------
+                        // [3] 거리 기반 최적화
+                        ImGui.SeparatorText("Distance-Based Optimization");
+                        bool IsDistanceVrs = vrsSettings.IsDistanceVRS == 1;
+                        if (ImGui.Checkbox("Enable Distance-Based VRS", ref IsDistanceVrs))
+                        {
+                            vrsSettings.IsDistanceVRS = IsDistanceVrs ? 1 : 0;
+                            app.RasterizerPipeline.LightingVRS.Settings = vrsSettings;
+                        }
+                        ToolTipForItemAboveHovered("Reduces shading rate based on camera distance.");
+
+                        ImGui.SeparatorText("Content-Adaptive (Frequency) VRS");
                         if (ImGui.Checkbox("Use Frequency Map (Content-Adaptive)", ref app.RasterizerPipeline.IsFrequencyVRS))
                         {
                             resetPathTracer = true;
                         }
                         ToolTipForItemAboveHovered("Turn ON for Frequency-based VRS, Turn OFF for Foveated VRS.");
 
-                    if (app.RasterizerPipeline.IsFrequencyVRS)
+                        if (app.RasterizerPipeline.IsFrequencyVRS)
                         {
                             ImGui.Indent();
 
@@ -773,9 +795,11 @@ partial class Gui : IDisposable
                         }
                     }
 
-                                
-                   
-    
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip("Reduces shading rate based on distance to save GPU performance.");
+                    }
+                    ImGui.Spacing();
 
                     if (ImGui.BeginCombo("DebugMode", app.RasterizerPipeline.LightingVRS.Settings.DebugValue.ToString()))
                     {
