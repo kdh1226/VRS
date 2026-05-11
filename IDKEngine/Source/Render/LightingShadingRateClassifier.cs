@@ -36,6 +36,8 @@ class LightingShadingRateClassifier : IDisposable
         // (패딩 문제 방지를 위해 int 뒤에 공간이 남을 수 있지만, 
         // IDKEngine은 보통 자동으로 맞춰줍니다. 일단 이렇게만 추가합시다.)
 
+        public int IsDistanceVRS = 1;   // 거리 기반 VRS 토글
+
         public GpuSettings()
         {
         }
