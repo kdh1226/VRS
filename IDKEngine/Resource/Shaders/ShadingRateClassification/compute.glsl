@@ -18,6 +18,8 @@ layout(std140, binding = 0) uniform SettingsUBO
     float _Pad0;
     vec2 MousePos;
     int IsFoveated;
+
+    int IsDistanceVRS;
 } settingsUBO;
 
 void GetTileData(vec3 color, vec2 velocity, out float speedSum, out float luminanceSum, out float luminanceSquaredSum);
@@ -75,69 +77,63 @@ void main()
 
         uint finalRateValue;
 
-        if (settingsUBO.IsFoveated == 1)
+        // 1단계: 화면 전체에 깔릴 '배경 화질'을 거리 기반으로 먼저 계산합니다.
+        uint backgroundRate = originalEngineRate;
+        if (settingsUBO.IsDistanceVRS == 1)
+        {
+            if (linearDepth > 30.0) 
+            {
+                if (backgroundRate < ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV) {
+                    backgroundRate = ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
+                }
+            }
+            if (linearDepth > 80.0) 
+            {
+                backgroundRate = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+            }
+            if (coeffOfVariation > 0.05) 
+            {
+                backgroundRate = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
+            }
+        }
+
+        // 2단계: 계산된 거리 기반 배경 위에 스코프/마우스의 초고화질 영역을 뚫어줍니다.
+        if (settingsUBO.IsFoveated == 1) // 마우스 모드
         {
             vec2 normalizedPos = vec2(gl_WorkGroupID.xy) / vec2(gl_NumWorkGroups.xy);
             vec2 res = textureSize(SamplerShaded, 0); 
             float aspect = res.x / res.y;
-            
             vec2 diff = normalizedPos - settingsUBO.MousePos;
-            diff.x *= aspect; 
+            diff.x *= aspect;
             float dist = length(diff);
             
-            if (dist < 0.15) 
-            {
+            if (dist < 0.15) {
                 finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
-            }
-            else 
-            {
-                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+            } else {
+                finalRateValue = backgroundRate; // 무조건 4x4 대신 똑똑한 배경 할당!
             }
         }
-        else if (settingsUBO.IsFoveated == 2) 
+        else if (settingsUBO.IsFoveated == 2) // 스코프 모드
         {
-            // 현재 화면 위치
             vec2 normalizedPos = vec2(gl_WorkGroupID.xy) / vec2(gl_NumWorkGroups.xy);
-            
-            // 화면 정중앙으로부터 얼마나 떨어져있는지 계산
             vec2 diff = normalizedPos - vec2(0.5, 0.5);
-            
             vec2 res = textureSize(SamplerShaded, 0); 
             float aspect = res.x / res.y;
             diff.x *= aspect; 
             
             float circularDist = length(diff);
 
-            // 스코프 안쪽
-            if (circularDist < 0.45) 
-            {
+            if (circularDist < 0.45) {
                 finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
-            }
-            // 스코프 바깥쪽
-            else 
-            {
-                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+            } else {
+                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;               
             }
         }
-        else
+        else // 포비티드가 꺼져있을 때 (일반 화면)
         {
-            finalRateValue = originalEngineRate;
-
-            if (linearDepth > 30.0) 
-            {
-                if (finalRateValue < ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV) {
-                    finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
-                }
-            }
-            if (linearDepth > 80.0) 
-            {
-                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
-            }
-            if (coeffOfVariation > 0.05) 
-            {
-                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
-            }
+            finalRateValue = backgroundRate;
         }
+
         imageStore(ImgResult, ivec2(gl_WorkGroupID.xy), uvec4(finalRateValue));
 
         if (settingsUBO.DebugMode == ENUM_DEBUG_MODE_SPEED)
