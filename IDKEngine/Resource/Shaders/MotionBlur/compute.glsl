@@ -20,7 +20,10 @@ void main()
     vec2  imgSize = vec2(imageSize(ImgResult));
     vec2  uv = (vec2(imgCoord) + 0.5) / imgSize;
 
+    //vec2 velocity = texelFetch(gBufferDataUBO.Velocity, imgCoord, 0).rg * 0.5
     vec2 velocity = texelFetch(gBufferDataUBO.Velocity, imgCoord, 0).rg * 0.5;
+    velocity /= perFrameDataUBO.DeltaRenderTime;
+    velocity *= 0.016;
 
     if (dot(velocity, velocity) < 1e-8)
     {
