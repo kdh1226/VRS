@@ -161,7 +161,8 @@ class RasterPipeline : IDisposable
     public bool IsMotionBlur;
     public bool IsVXGI;
     public bool IsVariableRateShading;
-    
+    public bool IsFoveated = false;
+
     // ▼▼▼ [추가] GUI에서 껐다 켰다 할 스위치 ▼▼▼
     public bool IsFrequencyVRS;
     public float EdgeThreshold = 0.15f; 
@@ -623,7 +624,11 @@ class RasterPipeline : IDisposable
                     normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
                     mySettings.MousePos = normalizedMouse;
                 }
-                mySettings.IsFoveated = isScopeMode ? 2 : 1;
+
+                // 우클릭(isScopeMode) 중이면 무조건 2(스코프), 
+                // 우클릭 안 할 때는 GUI 설정(IsMouseFoveated)에 따라 1(마우스) 또는 0(꺼짐)
+                mySettings.IsFoveated = isScopeMode ? 2 : (IsFoveated ? 1 : 0);
+
                 LightingVRS.Settings = mySettings;
                 LightingVRS.Compute(beforeTAATexture);
             }
