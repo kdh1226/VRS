@@ -48,7 +48,7 @@ class FrequencyMap : IDisposable
                 BBG.Cmd.BindTextureUnit(colorTexture, 0);
                 BBG.Cmd.UseShaderProgram(shaderProgram);
 
-                BBG.Computing.Dispatch(MyMath.DivUp(Result.Width, 8), MyMath.DivUp(Result.Height, 8), 1);
+                BBG.Computing.Dispatch(Result.Width, Result.Height, 1);
                 BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit); // 진욱님 원본대로 유지!
             });
         }
