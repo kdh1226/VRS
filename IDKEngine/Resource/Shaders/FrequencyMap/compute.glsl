@@ -8,8 +8,6 @@ layout(binding = 0, r8ui) uniform writeonly uimage2D resultImage;
 uniform float EdgeThreshold;
 uniform float HighRateRatio;
 uniform float MedRateRatio;
-uniform int VisualMode;
-
 shared uint SharedEdgeCounts[256];
 shared uint SharedSampleCounts[256];
 
@@ -78,7 +76,5 @@ void main() {
         visRate = 128u;
     }
 
-    uint finalRate = (VisualMode == 1) ? visRate : hwRate;
-
-    imageStore(resultImage, tileID, uvec4(finalRate, 0u, 0u, 0u));
+    imageStore(resultImage, tileID, uvec4(hwRate, 0u, 0u, 0u));
 }

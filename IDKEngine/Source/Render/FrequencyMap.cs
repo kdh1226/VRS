@@ -22,11 +22,13 @@ class FrequencyMap : IDisposable
     public BBG.Texture Result; 
 
     private readonly BBG.AbstractShaderProgram shaderProgram;
+    private readonly BBG.AbstractShaderProgram debugProgram;
     private readonly int tileSize = 16; 
 
     public FrequencyMap(Vector2i size, in GpuSettings settings)
     {
         shaderProgram = new BBG.AbstractShaderProgram(BBG.AbstractShader.FromFile(BBG.ShaderStage.Compute, "FrequencyMap/compute.glsl"));
+        debugProgram = new BBG.AbstractShaderProgram(BBG.AbstractShader.FromFile(BBG.ShaderStage.Compute, "FrequencyMap/debugCompute.glsl"));
         SetSize(size);
         Settings = settings;
     }
@@ -42,8 +44,6 @@ class FrequencyMap : IDisposable
                 shaderProgram.Upload("HighRateRatio", highRateRatio);
                 shaderProgram.Upload("MedRateRatio", medRateRatio);
 
-                shaderProgram.Upload("VisualMode", Settings.VisualMode);
-
                 BBG.Cmd.BindImageUnit(Result, 0);  
                 BBG.Cmd.BindTextureUnit(colorTexture, 0);
                 BBG.Cmd.UseShaderProgram(shaderProgram);
@@ -52,6 +52,25 @@ class FrequencyMap : IDisposable
                 BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit); // 진욱님 원본대로 유지!
             });
         }
+
+    public void DebugRender(BBG.Texture dest)
+    {
+        if (Settings.VisualMode == 0)
+        {
+            return;
+        }
+
+        BBG.Computing.Compute("Debug render frequency map", () =>
+        {
+            BBG.Cmd.BindImageUnit(dest, 0);
+            BBG.Cmd.BindTextureUnit(dest, 0);
+            BBG.Cmd.BindTextureUnit(Result, 1);
+            BBG.Cmd.UseShaderProgram(debugProgram);
+
+            BBG.Computing.Dispatch(MyMath.DivUp(dest.Width, tileSize), MyMath.DivUp(dest.Height, tileSize), 1);
+            BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit);
+        });
+    }
 
     public void SetSize(Vector2i size)
     {
@@ -71,6 +90,7 @@ class FrequencyMap : IDisposable
     {
         Result.Dispose();
         shaderProgram.Dispose();
+        debugProgram.Dispose();
     }
 
     public BBG.Rendering.ShadingRateNV[] ShadingRatePalette = new BBG.Rendering.ShadingRateNV[]
