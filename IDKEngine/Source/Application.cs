@@ -123,7 +123,10 @@ class Application : GameWindowBase
     public bool TimeEnabled;
 
     public bool IsSequenceMode = false;
+    public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
+    private float sequenceFpsElapsed = 0.0f;
+    private int sequenceFpsFrames = 0;
     
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
     {
@@ -337,6 +340,16 @@ class Application : GameWindowBase
         PollEvents();
 
         fpsCounter++;
+        if (IsSequenceMode)
+        {
+            sequenceFpsFrames++;
+            sequenceFpsElapsed += dT;
+            if (sequenceFpsElapsed > 0.0f)
+            {
+                AverageFramesPerSecond = sequenceFpsFrames / sequenceFpsElapsed;
+            }
+        }
+
         if (fpsTimer.ElapsedMilliseconds >= 1000)
         {
             MeasuredFramesPerSecond = fpsCounter;
@@ -415,6 +428,9 @@ class Application : GameWindowBase
         {
             IsSequenceMode = !IsSequenceMode;
             sequenceTimer = 0.0f;
+            sequenceFpsElapsed = 0.0f;
+            sequenceFpsFrames = 0;
+            AverageFramesPerSecond = 0.0f;
         }
 
         if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)

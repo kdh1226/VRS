@@ -1563,6 +1563,21 @@ partial class Gui : IDisposable
                 SysVec2 max = ImGui.GetItemRectMax();
                 drawList.AddImage((nint)scopeTexture.ID, min, max, new SysVec2(0, 1), new SysVec2(1, 0));
             }
+
+            if (app.IsSequenceMode)
+            {
+                ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+                SysVec2 min = ImGui.GetItemRectMin();
+                SysVec2 max = ImGui.GetItemRectMax();
+                float barHeight = 34.0f;
+                SysVec2 barMax = new SysVec2(max.X, min.Y + barHeight);
+                string text = $"FPS Measure Mode | Current: {app.MeasuredFramesPerSecond} FPS | Average: {app.AverageFramesPerSecond:F1} FPS";
+                SysVec2 textSize = ImGui.CalcTextSize(text);
+                SysVec2 textPos = new SysVec2(min.X + 14.0f, min.Y + (barHeight - textSize.Y) * 0.5f);
+
+                drawList.AddRectFilled(min, barMax, ImGui.GetColorU32(new System.Numerics.Vector4(0.0f, 0.0f, 0.0f, 0.82f)));
+                drawList.AddText(textPos, ImGui.GetColorU32(new System.Numerics.Vector4(1.0f, 1.0f, 1.0f, 1.0f)), text);
+            }
         }
         ImGui.PopStyleVar();
         ImGui.End();
