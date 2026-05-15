@@ -733,6 +733,27 @@ partial class Gui : IDisposable
 
                         var vrsSettings = app.RasterizerPipeline.LightingVRS.Settings;
 
+                        if (ImGui.BeginCombo("VRS Mode", app.RasterizerPipeline.VariableRateShadingMode.ToString()))
+                        {
+                            RasterPipeline.VrsMode[] modes = Enum.GetValues<RasterPipeline.VrsMode>();
+                            for (int i = 0; i < modes.Length; i++)
+                            {
+                                RasterPipeline.VrsMode mode = modes[i];
+                                bool isSelected = mode == app.RasterizerPipeline.VariableRateShadingMode;
+                                if (ImGui.Selectable(mode.ToString(), isSelected))
+                                {
+                                    app.RasterizerPipeline.VariableRateShadingMode = mode;
+                                    resetPathTracer = true;
+                                }
+
+                                if (isSelected)
+                                {
+                                    ImGui.SetItemDefaultFocus();
+                                }
+                            }
+                            ImGui.EndCombo();
+                        }
+
                         // [2] 포비티드 렌더링
                         ImGui.SeparatorText("Foveated Rendering");
                         if (ImGui.Checkbox("IsFoveated", ref app.RasterizerPipeline.IsFoveated))
@@ -741,57 +762,9 @@ partial class Gui : IDisposable
                         }
                         ToolTipForItemAboveHovered("Enables foveated rendering. Higher quality at focus, lower at periphery.");
 
-                        // ------------------------------------------------------------------
-                        // [3] 거리 기반 최적화
-                        ImGui.SeparatorText("Distance-Based Optimization");
-                        bool IsDistanceVrs = vrsSettings.IsDistanceVRS == 1;
-                        if (ImGui.Checkbox("Enable Distance-Based VRS", ref IsDistanceVrs))
+                        if (app.RasterizerPipeline.VariableRateShadingMode == RasterPipeline.VrsMode.FrequencyMap)
                         {
-                            vrsSettings.IsDistanceVRS = IsDistanceVrs ? 1 : 0;
-                            app.RasterizerPipeline.LightingVRS.Settings = vrsSettings;
-                        }
-                        ToolTipForItemAboveHovered("Reduces shading rate based on camera distance.");
-
-                        ImGui.SeparatorText("Content-Adaptive (Frequency) VRS");
-                        if (ImGui.Checkbox("Use Frequency Map (Content-Adaptive)", ref app.RasterizerPipeline.IsFrequencyVRS))
-                        {
-                            resetPathTracer = true;
-                        }
-                        ToolTipForItemAboveHovered("Turn ON for Frequency-based VRS, Turn OFF for Foveated VRS.");
-
-                        if (app.RasterizerPipeline.IsFrequencyVRS)
-                        {
-                            ImGui.Indent();
-
-                            tempBool = app.RasterizerPipeline.FrequencyVRS.Settings.VisualMode != 0;
-                            if (ImGui.Checkbox("Enable Visualization Mode", ref tempBool))
-                            {
-                                app.RasterizerPipeline.FrequencyVRS.Settings.VisualMode = tempBool ? 1 : 0;
-                                resetPathTracer = true;
-                            }
-                            ToolTipForItemAboveHovered("Visualizes the frequency content with colors (Green/Yellow/Red).");
-
-                            // --- [새로 추가된 소벨 필터용 슬라이더 3형제] ---
-                            ImGui.SeparatorText("Sobel Edge Detection");
-                            
-                            // 1. 엣지 판별 기준 (빛 노이즈 억제력)
-                            ImGui.SliderFloat("Edge Gradient Threshold", ref app.RasterizerPipeline.EdgeThreshold, 0.01f, 1.0f, "%.3f");
-                            ToolTipForItemAboveHovered("Higher values ignore noise and only detect strong outlines as edges."); // 한글을 영어로 변경!
-
-                            // 2. 고화질(빨강) 등급 부여 기준 (15% 추천)
-                            ImGui.SliderFloat("1x1 (Red) Ratio", ref app.RasterizerPipeline.HighRateRatio, 0.0f, 0.5f, "%.3f");
-                            
-                            // 3. 중화질(노랑) 등급 부여 기준 (5% 추천)
-                            ImGui.SliderFloat("2x2 (Yellow) Ratio", ref app.RasterizerPipeline.MedRateRatio, 0.0f, 0.5f, "%.3f");
-
-                            // 조작 실수 방어: 빨강 기준이 노랑 기준보다 낮아지면 꼬이니까 막아줍니다.
-                            if (app.RasterizerPipeline.HighRateRatio < app.RasterizerPipeline.MedRateRatio)
-                            {
-                                app.RasterizerPipeline.HighRateRatio = app.RasterizerPipeline.MedRateRatio;
-                            }
-                            // ---------------------------------------------------
-
-                            ImGui.Unindent();
+                            ImGui.Text($"Frequency thresholds: {RasterPipeline.FrequencyEdgeThreshold:0.###}, {RasterPipeline.FrequencyHighRateRatio:0.###}, {RasterPipeline.FrequencyMedRateRatio:0.###}");
                         }
                     }
 

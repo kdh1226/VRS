@@ -23,6 +23,13 @@ class RasterPipeline : IDisposable
         FSR2,
     }
 
+    public enum VrsMode : int
+    {
+        Original,
+        FrequencyMap,
+        Distance,
+    }
+
     private AntiAliasingMode _temporalAntiAliasingMode;
     public AntiAliasingMode AntiAliasingMode_
     {
@@ -161,13 +168,12 @@ class RasterPipeline : IDisposable
     public bool IsMotionBlur;
     public bool IsVXGI;
     public bool IsVariableRateShading;
+    public VrsMode VariableRateShadingMode = VrsMode.Original;
     public bool IsFoveated = false;
 
-    // ▼▼▼ [추가] GUI에서 껐다 켰다 할 스위치 ▼▼▼
-    public bool IsFrequencyVRS;
-    public float EdgeThreshold = 0.15f; 
-    public float HighRateRatio = 0.15f; 
-    public float MedRateRatio = 0.05f;
+    public const float FrequencyEdgeThreshold = 0.355f;
+    public const float FrequencyHighRateRatio = 0.13f;
+    public const float FrequencyMedRateRatio = 0.02f;
 
     // Voxelization Settings
     public bool IsConfigureGridMode;
@@ -225,7 +231,6 @@ class RasterPipeline : IDisposable
         
         // ▼▼▼ [추가] 주파수 맵 초기화 ▼▼▼
         FrequencyVRS = new FrequencyMap(renderSize, new FrequencyMap.GpuSettings());
-        IsFrequencyVRS = false;
 
         Voxelizer = new Voxelizer(256, 256, 256, new Vector3(-28.0f, -3.0f, -17.0f), new Vector3(28.0f, 20.0f, 17.0f));
         ConeTracer = new ConeTracer(renderSize, new ConeTracer.GpuSettings());
@@ -460,8 +465,7 @@ class RasterPipeline : IDisposable
         }, new BBG.Rendering.GraphicsPipelineState()
         {
             EnabledCapabilities = [BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)],
-            // ▼▼▼ [수정] 스위치에 따라 포비티드와 주파수 맵을 번갈아 바인딩 ▼▼▼
-            VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
+            VariableRateShading = LightingVRS.GetRenderData(),
         }, () =>
         {
             deferredLightingProgram.Upload("ShadowMode", (uint)ShadowMode_);
@@ -469,9 +473,6 @@ class RasterPipeline : IDisposable
 
             BBG.Cmd.BindTextureUnit(SSAO.Result, 0, IsSSAO);
             BBG.Cmd.BindTextureUnit(ConeTracer.Result, 1, IsVXGI);
-
-            BBG.Cmd.BindTextureUnit(FrequencyVRS.Result, 10);
-
             BBG.Cmd.UseShaderProgram(deferredLightingProgram);
 
             BBG.Rendering.InferViewportSize();
@@ -497,8 +498,7 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.Capability.CullFace,
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
-            // ▼▼▼ [수정] ▼▼▼
-           VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
+            VariableRateShading = LightingVRS.GetRenderData(),
         }, () =>
         {
             BBG.Rendering.InferViewportSize();
@@ -525,8 +525,7 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
             DepthFunction = BBG.Rendering.DepthFunction.Lequal,
-            // ▼▼▼ [수정] ▼▼▼
-           VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
+            VariableRateShading = LightingVRS.GetRenderData(),
         }, () =>
         {
             BBG.Cmd.UseShaderProgram(skyBoxProgram);
@@ -566,8 +565,7 @@ class RasterPipeline : IDisposable
                 ],
                 EnableDepthWrites = false,
                 FillMode = IsWireframe ? BBG.Rendering.FillMode.Line : BBG.Rendering.FillMode.Fill,
-                // ▼▼▼ [수정] ▼▼▼
-                VariableRateShading = IsFrequencyVRS ? FrequencyVRS.GetRenderData() : LightingVRS.GetRenderData(),
+                VariableRateShading = LightingVRS.GetRenderData(),
             },
             () =>
             {
@@ -608,30 +606,24 @@ class RasterPipeline : IDisposable
 
         if (IsVariableRateShading || LightingVRS.Settings.DebugValue != LightingShadingRateClassifier.DebugMode.None)
         {
-            if (IsFrequencyVRS)
+            if (VariableRateShadingMode == VrsMode.FrequencyMap)
             {
-                // [수정 완료] 시각화 모드 ON/OFF 상관없이, 무조건 굴곡이 확실한 NormalTexture로 엣지를 잡습니다!
-                // 이렇게 해야 셰이더의 rg 채널 수학 공식이 완벽하게 들어맞습니다.
-                FrequencyVRS.Compute(NormalTexture, EdgeThreshold, HighRateRatio, MedRateRatio); 
+                FrequencyVRS.Compute(NormalTexture, FrequencyEdgeThreshold, FrequencyHighRateRatio, FrequencyMedRateRatio);
             }
-            else
+
+            var mySettings = LightingVRS.Settings;
+            mySettings.VrsMode = (int)VariableRateShadingMode;
+            if (mousePos.X >= 0)
             {
-                // 기존 포비티드 VRS 계산
-                var mySettings = LightingVRS.Settings;
-                if (mousePos.X >= 0)
-                {
-                    Vector2 normalizedMouse = mousePos / windowSize;
-                    normalizedMouse.Y = 1.0f - normalizedMouse.Y; 
-                    mySettings.MousePos = normalizedMouse;
-                }
-
-                // 우클릭(isScopeMode) 중이면 무조건 2(스코프), 
-                // 우클릭 안 할 때는 GUI 설정(IsMouseFoveated)에 따라 1(마우스) 또는 0(꺼짐)
-                mySettings.IsFoveated = isScopeMode ? 2 : (IsFoveated ? 1 : 0);
-
-                LightingVRS.Settings = mySettings;
-                LightingVRS.Compute(beforeTAATexture);
+                Vector2 normalizedMouse = mousePos / windowSize;
+                normalizedMouse.Y = 1.0f - normalizedMouse.Y;
+                mySettings.MousePos = normalizedMouse;
             }
+
+            mySettings.IsFoveated = isScopeMode ? 2 : (IsFoveated ? 1 : 0);
+
+            LightingVRS.Settings = mySettings;
+            LightingVRS.Compute(beforeTAATexture, FrequencyVRS.Result);
         }
         
         if (IsMotionBlur)

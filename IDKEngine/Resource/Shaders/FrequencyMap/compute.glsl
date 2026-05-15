@@ -11,10 +11,9 @@ uniform float MedRateRatio;
 shared uint SharedEdgeCounts[256];
 shared uint SharedSampleCounts[256];
 
-float GetSurfaceData(ivec2 coord, ivec2 texSize) {
+vec2 GetSurfaceData(ivec2 coord, ivec2 texSize) {
     coord = clamp(coord, ivec2(0), texSize - ivec2(1));
-    vec2 normalXY = texelFetch(inputTexture, coord, 0).rg;
-    return normalXY.x + normalXY.y;
+    return texelFetch(inputTexture, coord, 0).rg;
 }
 
 void main() {
@@ -32,18 +31,18 @@ void main() {
 
     uint edgeCount = 0u;
     if(validSample) {
-        float p00 = GetSurfaceData(pixelCoord + ivec2(-1, -1), texSize);
-        float p10 = GetSurfaceData(pixelCoord + ivec2( 0, -1), texSize);
-        float p20 = GetSurfaceData(pixelCoord + ivec2( 1, -1), texSize);
-        float p01 = GetSurfaceData(pixelCoord + ivec2(-1,  0), texSize);
-        float p21 = GetSurfaceData(pixelCoord + ivec2( 1,  0), texSize);
-        float p02 = GetSurfaceData(pixelCoord + ivec2(-1,  1), texSize);
-        float p12 = GetSurfaceData(pixelCoord + ivec2( 0,  1), texSize);
-        float p22 = GetSurfaceData(pixelCoord + ivec2( 1,  1), texSize);
+        vec2 p00 = GetSurfaceData(pixelCoord + ivec2(-1, -1), texSize);
+        vec2 p10 = GetSurfaceData(pixelCoord + ivec2( 0, -1), texSize);
+        vec2 p20 = GetSurfaceData(pixelCoord + ivec2( 1, -1), texSize);
+        vec2 p01 = GetSurfaceData(pixelCoord + ivec2(-1,  0), texSize);
+        vec2 p21 = GetSurfaceData(pixelCoord + ivec2( 1,  0), texSize);
+        vec2 p02 = GetSurfaceData(pixelCoord + ivec2(-1,  1), texSize);
+        vec2 p12 = GetSurfaceData(pixelCoord + ivec2( 0,  1), texSize);
+        vec2 p22 = GetSurfaceData(pixelCoord + ivec2( 1,  1), texSize);
 
-        float gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
-        float gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-        float gradient = abs(gx) + abs(gy);
+        vec2 gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
+        vec2 gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
+        float gradient = length(gx) + length(gy);
 
         edgeCount = gradient > EdgeThreshold ? 1u : 0u;
     }
@@ -64,7 +63,7 @@ void main() {
 
     float edgeRatio = SharedSampleCounts[0] > 0u ? float(SharedEdgeCounts[0]) / float(SharedSampleCounts[0]) : 0.0;
 
-    uint hwRate = 6u;
+    uint hwRate = 2u;
     uint visRate = 64u;
 
     if(edgeRatio > HighRateRatio) {
@@ -72,7 +71,7 @@ void main() {
         visRate = 255u;
     }
     else if(edgeRatio > MedRateRatio) {
-        hwRate = 3u;
+        hwRate = 1u;
         visRate = 128u;
     }
 

@@ -7,8 +7,8 @@ layout(binding = 0) uniform sampler2D SamplerSrc;
 layout(binding = 1) uniform usampler2D SamplerFrequencyMap;
 
 const uint SHADING_RATE_1X1 = 0u;
-const uint SHADING_RATE_2X2 = 3u;
-const uint SHADING_RATE_4X4 = 6u;
+const uint SHADING_RATE_2X2 = 1u;
+const uint SHADING_RATE_4X4 = 2u;
 const int TILE_SIZE = 16;
 
 vec3 GetFrequencyColor(uint shadingRate)

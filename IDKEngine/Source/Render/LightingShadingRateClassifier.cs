@@ -33,10 +33,7 @@ class LightingShadingRateClassifier : IDisposable
         public Vector2 MousePos;  // 마우스 위치
         public int IsFoveated;    // 스위치 (0 or 1)
 
-        // (패딩 문제 방지를 위해 int 뒤에 공간이 남을 수 있지만, 
-        // IDKEngine은 보통 자동으로 맞춰줍니다. 일단 이렇게만 추가합시다.)
-
-        public int IsDistanceVRS = 1;   // 거리 기반 VRS 토글
+        public int VrsMode;
 
         public GpuSettings()
         {
@@ -68,7 +65,7 @@ class LightingShadingRateClassifier : IDisposable
         Settings = settings;
     }
 
-    public void Compute(BBG.Texture shaded)
+    public void Compute(BBG.Texture shaded, BBG.Texture frequencyMap = null)
     {
         BBG.Computing.Compute("Generate Shading Rate Image", () =>
         {
@@ -77,6 +74,7 @@ class LightingShadingRateClassifier : IDisposable
             BBG.Cmd.BindImageUnit(Result, 0);
             BBG.Cmd.BindImageUnit(debugTexture, 1);
             BBG.Cmd.BindTextureUnit(shaded, 0);
+            BBG.Cmd.BindTextureUnit(frequencyMap ?? Result, 2);
             BBG.Cmd.UseShaderProgram(shaderProgram);
 
             BBG.Computing.Dispatch(MyMath.DivUp(shaded.Width, TILE_SIZE), MyMath.DivUp(shaded.Height, TILE_SIZE), 1);

@@ -259,14 +259,7 @@ class Application : GameWindowBase
                 }
 
                 TonemapAndGamma.Compute(RasterizerPipeline.Result, IsBloom ? Bloom.Result : null, IsVolumetricLighting ? VolumetricLight.Result : null);
-                if (RasterizerPipeline.IsFrequencyVRS)
-                {
-                    RasterizerPipeline.FrequencyVRS.DebugRender(TonemapAndGamma.Result);
-                }
-                else
-                {
-                    RasterizerPipeline.LightingVRS.DebugRender(TonemapAndGamma.Result);
-                }
+                RasterizerPipeline.LightingVRS.DebugRender(TonemapAndGamma.Result);
             }
         }
 
