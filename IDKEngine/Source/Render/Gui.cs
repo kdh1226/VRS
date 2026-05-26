@@ -829,6 +829,18 @@ partial class Gui : IDisposable
                         ImGui.SliderInt("Samples##SamplesMotionBlur", ref app.RasterizerPipeline.MotionBlur.Settings.SampleCount, 1, 32);
                         ImGui.SliderFloat("Intensity", ref app.RasterizerPipeline.MotionBlur.Settings.Intensity, 0.0f, 25.0f);
                         ImGui.SliderFloat("MaxBlurPixels", ref app.RasterizerPipeline.MotionBlur.Settings.MaxBlurPixels, 1.0f, 128.0f);
+
+                        if (app.RasterizerPipeline.IsVariableRateShading)
+                        {
+                            var vrsSettings = app.RasterizerPipeline.LightingVRS.Settings;
+                            bool isMotionBlurVRS = vrsSettings.IsMotionBlurVRS == 1;
+                            if (ImGui.Checkbox("MotionBlur VRS", ref isMotionBlurVRS))
+                            {
+                                vrsSettings.IsMotionBlurVRS = isMotionBlurVRS ? 1 : 0;
+                                app.RasterizerPipeline.LightingVRS.Settings = vrsSettings;
+                            }
+                        }
+
                     }
                 }
             }

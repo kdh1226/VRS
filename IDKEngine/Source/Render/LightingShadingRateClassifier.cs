@@ -34,7 +34,7 @@ class LightingShadingRateClassifier : IDisposable
         public int IsFoveated;    // 스위치 (0 or 1)
 
         public int VrsMode;
-
+        public int IsMotionBlurVRS = 0;
         public GpuSettings()
         {
         }
