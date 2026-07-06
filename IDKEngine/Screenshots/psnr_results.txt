@@ -1,0 +1,17 @@
+PSNR 측정 결과
+============================================================
+[5초] VRS O 모션블러 O MotionBlurVRS O_5.jpg => 34.37 dB
+[5초] VRS O 모션블러 O MotionBlurVRS X_5.jpg => 34.90 dB
+[5초] VRS O 모션블러 X_5.jpg => 30.19 dB
+[5초] 주파수맵 O 모션블러 O MotionBlurVRS O_5.jpg => 34.00 dB
+[5초] 주파수맵 O 모션블러 O MotionBlurVRS X_5.jpg => 29.57 dB
+[10초] VRS O 모션블러 O MotionBlurVRS O_10.jpg => 34.44 dB
+[10초] VRS O 모션블러 O MotionBlurVRS X_10.jpg => 36.26 dB
+[10초] VRS O 모션블러 X_10.jpg => 22.62 dB
+[10초] 주파수맵 O 모션블러 O MotionBlurVRS O_10.jpg => 33.86 dB
+[10초] 주파수맵 O 모션블러 O MotionBlurVRS X_10.jpg => 22.33 dB
+[15초] VRS O 모션블러 O MotionBlurVRS O_15.jpg => 33.52 dB
+[15초] VRS O 모션블러 O MotionBlurVRS X_15.jpg => 32.71 dB
+[15초] VRS O 모션블러 X_15.jpg => 21.53 dB
+[15초] 주파수맵 O 모션블러 O MotionBlurVRS O_15.jpg => 32.65 dB
+[15초] 주파수맵 O 모션블러 O MotionBlurVRS X_15.jpg => 21.37 dB

@@ -125,6 +125,9 @@ class Application : GameWindowBase
     public bool IsSequenceMode = false;
     public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
+    private bool hasAutoScreenshot5 = false;
+    private bool hasAutoScreenshot10 = false;
+    private bool hasAutoScreenshot15 = false;
     private float sequenceFpsElapsed = 0.0f;
     private int sequenceFpsFrames = 0;
     
@@ -421,6 +424,9 @@ class Application : GameWindowBase
         {
             IsSequenceMode = !IsSequenceMode;
             sequenceTimer = 0.0f;
+            hasAutoScreenshot5 = false;
+            hasAutoScreenshot10 = false;
+            hasAutoScreenshot15 = false;
             sequenceFpsElapsed = 0.0f;
             sequenceFpsFrames = 0;
             AverageFramesPerSecond = 0.0f;
@@ -519,6 +525,38 @@ class Application : GameWindowBase
             if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
                 sequenceTimer += dT;
+
+                if (IsSequenceMode)
+                {
+                    if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_5sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot5 = true;
+                    }
+                    if (sequenceTimer >= 10.0f && !hasAutoScreenshot10)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_10sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot10 = true;
+                    }
+                    if (sequenceTimer >= 15.0f && !hasAutoScreenshot15)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_15sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot15 = true;
+                    }
+                }
+
                 float maxTime = waypoints[^1].Time;
 
                 if (sequenceTimer > maxTime) 

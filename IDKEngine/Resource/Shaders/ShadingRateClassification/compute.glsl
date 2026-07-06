@@ -96,16 +96,6 @@ void main()
 
         uint finalRateValue = originalEngineRate;
 
-        // 모션블러가 적용되는 순간(velocity가 있는 순간) VRS 저화질 강제 적용
-        if (settingsUBO.IsMotionBlurVRS == 1)
-        {
-            float tileSpeed = speedSum / SAMPLES_PER_TILE;
-            if (dot(vec2(tileSpeed), vec2(tileSpeed)) > 1e-8)
-            {
-                finalRateValue = ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
-            }
-        }
-
         if (settingsUBO.VrsMode == ENUM_VRS_MODE_FREQUENCY_MAP)
         {
             uint frequencyRate = texelFetch(SamplerFrequencyMap, ivec2(gl_WorkGroupID.xy), 0).r;
@@ -114,6 +104,17 @@ void main()
         else if (settingsUBO.VrsMode == ENUM_VRS_MODE_DISTANCE)
         {
             finalRateValue = GetDistanceRate(linearDepth);
+        }
+
+        // 모션블러 VRS는 모든 모드 이후에 적용
+        if (settingsUBO.IsMotionBlurVRS == 1)
+        {
+            float tileSpeed = speedSum / SAMPLES_PER_TILE;
+            if (tileSpeed > 0.001)
+            {
+                finalRateValue = min(finalRateValue + 1u,
+                    ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV);
+            }
         }
 
         if (settingsUBO.IsFoveated == 1)
