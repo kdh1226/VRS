@@ -401,3 +401,8 @@ FodyWeavers.xsd
 *.frd
 log.txt
 RecordedFrames
+
+IDKEngine/Screenshots/
+cd
+git
+main
