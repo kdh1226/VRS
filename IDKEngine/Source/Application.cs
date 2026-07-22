@@ -795,7 +795,7 @@ class Application : GameWindowBase
 
     private void TryAddFanModel()
     {
-        string fanPath = Path.Combine(FanModelFolder, "scene.gltf");
+        string fanPath = Path.Combine(FanModelFolder, "fan.gltf");
 
         if (!File.Exists(fanPath))
         {
