@@ -35,6 +35,10 @@ class LightingShadingRateClassifier : IDisposable
 
         public int VrsMode;
         public int IsMotionBlurVRS = 0;
+
+        // Motion-adaptive VRS threshold
+        public float MotionThresholdLow = 0.001f;
+        public float MotionThresholdHigh = 0.0015f;
         public GpuSettings()
         {
         }
