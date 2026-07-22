@@ -20,6 +20,10 @@ layout(std140, binding = 0) uniform SettingsUBO
     int IsFoveated;
     int VrsMode;
     int IsMotionBlurVRS;
+
+    // Motion-adaptive VRS thresholds
+    float MotionThresholdLow;
+    float MotionThresholdHigh;
 } settingsUBO;
 
 layout(binding = 2) uniform usampler2D SamplerFrequencyMap;
@@ -30,6 +34,7 @@ const int ENUM_VRS_MODE_DISTANCE = 2;
 
 uint GetFrequencyRate(uint frequencyRate);
 uint GetDistanceRate(float linearDepth);
+uint GetMotionAdaptiveRate(float meanSpeed);
 uint GetFrequencyRate(uint frequencyRate)
 {
     if (frequencyRate == 0u) return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
@@ -43,6 +48,22 @@ uint GetDistanceRate(float linearDepth)
     if (linearDepth > 10.0) return ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
     return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
 }
+
+uint GetMotionAdaptiveRate(float meanSpeed)
+{
+    if (meanSpeed < settingsUBO.MotionThresholdLow)
+    {
+        return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
+    }
+
+    if (meanSpeed < settingsUBO.MotionThresholdHigh)
+    {
+        return ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
+    }
+
+    return ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+}
+
 void GetTileData(vec3 color, vec2 velocity, out float speedSum, out float luminanceSum, out float luminanceSquaredSum);
 float GetLuminance(vec3 color);
 
@@ -109,12 +130,12 @@ void main()
         // 모션블러 VRS는 모든 모드 이후에 적용
         if (settingsUBO.IsMotionBlurVRS == 1)
         {
-            float tileSpeed = speedSum / SAMPLES_PER_TILE;
-            if (tileSpeed > 0.001)
-            {
-                finalRateValue = min(finalRateValue + 1u,
-                    ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV);
-            }
+            // meanSpeed는 DeltaRenderTime으로 보정된 tile 평균 motion 크기
+            uint motionRate = GetMotionAdaptiveRate(meanSpeed);
+
+            // motion 기반 rate와 기존 VRS rate 중 더 낮은 품질 쪽을 선택한다
+            // 값이 클수록 더 coarse한 shading rate다
+            finalRateValue = max(finalRateValue, motionRate);            
         }
 
         if (settingsUBO.IsFoveated == 1)
