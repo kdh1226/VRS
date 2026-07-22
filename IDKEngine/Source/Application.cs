@@ -150,6 +150,13 @@ class Application : GameWindowBase
 
     private float animationTime;
 
+    private ModelLoader.Node? fanBladeNode;
+    private Transformation fanBladeBaseTransform;
+
+    private const float FanScale = 0.02f;
+    private const float FanBladeRpm = 3000.0f;
+    private const string FanModelFolder = "Resource/Models/Fan";
+
     public Application(int width, int height, string title)
         : base(width, height, title, 4, 6)
     {
@@ -219,6 +226,7 @@ class Application : GameWindowBase
         gpuPerFrameDataBuffer.UploadElements(gpuPerFrameData);
 
         LightManager.Update(out bool anyLightMoved);
+        UpdateFanBladeAnimation(animationTime);
         ModelManager.Update(animationTime, out bool anyAnimatedNodeMoved, out bool anyMeshInstanceMoved);
         //ModelManager.BVH.BlasesBuild(0, ModelManager.BVH.BlasesDesc.Length);
 
@@ -701,6 +709,7 @@ class Application : GameWindowBase
             ModelLoader.HoistMeshPrimitives(ref sponza, true);
 
             ModelManager.Add(sponza, lucy, helmet);
+            TryAddFanModel();
 
             SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
 
@@ -782,6 +791,92 @@ class Application : GameWindowBase
                 Logger.Log(Logger.LogLevel.Warn, $"Dropped file \"{Path.GetFileName(path)}\" is unsupported. Only .gltf and .glb");
             }
         }
+    }
+
+    private void TryAddFanModel()
+    {
+        string fanPath = Path.Combine(FanModelFolder, "scene.gltf");
+
+        if (!File.Exists(fanPath))
+        {
+            Logger.Log(Logger.LogLevel.Warn, $"Fan model not found: {fanPath}");
+            return;
+        }
+
+        // Sponza 안에 배치할 선풍기 위치/크기
+        Matrix4 fanTransform = new Transformation()
+            .WithScale(FanScale)
+            .WithRotationDeg(0.0f, 90.0f, 0.0f)
+            .WithTranslation(3.0f, -1.0f, 0.0f)
+            .GetMatrix();
+
+        if (ModelLoader.LoadGltfFromFile(fanPath, fanTransform) is not ModelLoader.Model fan)
+        {
+            Logger.Log(Logger.LogLevel.Error, $"Failed loading fan model \"{fanPath}\"");
+            return;
+        }
+
+        int fanModelIndex = ModelManager.CpuModels.Length;
+        ModelManager.Add(fan);
+
+        // 모델 node 이름에서 날개로 보이는 node를 탐색
+        fanBladeNode = FindFanBladeNode(ModelManager.CpuModels[fanModelIndex].Root);
+
+        if (fanBladeNode == null)
+        {
+            Logger.Log(Logger.LogLevel.Warn, "Fan loaded, but no blade-like node was found.");
+            LogFanNodeNames(ModelManager.CpuModels[fanModelIndex].Root);
+            return;
+        }
+
+        fanBladeBaseTransform = fanBladeNode.LocalTransform;
+        Logger.Log(Logger.LogLevel.Info, $"Fan loaded. Animating blade node \"{fanBladeNode.Name}\".");
+    }
+
+    private static ModelLoader.Node? FindFanBladeNode(ModelLoader.Node root)
+    {
+        ModelLoader.Node? result = null;
+
+        ModelLoader.Node.Traverse(root, (node) =>
+        {
+            if (result != null)
+            {
+                return;
+            }
+
+            string name = node.Name;
+            if (name.Contains("blade", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("propeller", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("rotor", StringComparison.OrdinalIgnoreCase))
+            {
+                result = node;
+            }
+        });
+
+        return result;
+    }
+
+    private static void LogFanNodeNames(ModelLoader.Node root)
+    {
+        ModelLoader.Node.Traverse(root, (node) =>
+        {
+            Logger.Log(Logger.LogLevel.Info, $"Fan node: \"{node.Name}\"");
+        });
+    }
+
+    private void UpdateFanBladeAnimation(float time)
+    {
+        if (fanBladeNode == null)
+        {
+            return;
+        }
+
+        float revolutionsPerSecond = FanBladeRpm / 60.0f;
+        float angleRad = time * revolutionsPerSecond * MathF.Tau;
+
+        Transformation animated = fanBladeBaseTransform;
+        animated.Rotation = Quaternion.FromAxisAngle(Vector3.UnitZ, angleRad) * fanBladeBaseTransform.Rotation;
+        fanBladeNode.LocalTransform = animated;
     }
 
     /// <summary>
