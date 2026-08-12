@@ -797,7 +797,7 @@ partial class Gui : IDisposable
 
                     ImGui.SliderFloat("SpeedFactor", ref app.RasterizerPipeline.LightingVRS.Settings.SpeedFactor, 0.0f, 1.0f);
                     ImGui.SliderFloat("LumVarianceFactor", ref app.RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor, 0.0f, 0.3f);
-
+                    ImGui.SliderFloat("Target FPS", ref app.TargetFPS, 30.0f, 165.0f);
                     ImGui.SliderFloat("MotionThresholdLow",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow,0.0f,0.05f);
                     ImGui.SliderFloat("MotionThresholdHigh",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh,0.0f,0.1f);
                 }
