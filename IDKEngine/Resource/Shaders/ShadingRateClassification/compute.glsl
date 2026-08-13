@@ -210,6 +210,5 @@ void GetTileData(vec3 color, vec2 velocity, out float speedSum, out float lumina
 
 float GetLuminance(vec3 color)
 {
-    return (color.x + color.y + color.z) * (1.0 / 3.0);
+    return 0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z;
 }
-

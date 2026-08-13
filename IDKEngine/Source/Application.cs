@@ -361,7 +361,6 @@ class Application : GameWindowBase
         // Framerate-aware VRS
         float currentFPS = 1.0f / dT;
         float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-
         if (currentFPS < TargetFPS - 5.0f)
         {
             currentLumVariance += lumVarianceAdjustSpeed;
@@ -372,7 +371,6 @@ class Application : GameWindowBase
             currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
             currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
         }
-
         var settings = RasterizerPipeline.LightingVRS.Settings;
         settings.LumVarianceFactor = currentLumVariance;
         RasterizerPipeline.LightingVRS.Settings = settings;
