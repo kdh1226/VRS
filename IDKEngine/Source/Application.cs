@@ -125,9 +125,15 @@ class Application : GameWindowBase
     public bool IsSequenceMode = false;
     public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
+    private bool hasAutoScreenshot5 = false;
+    private bool hasAutoScreenshot10 = false;
+    private bool hasAutoScreenshot15 = false;
+    private float sequenceFpsElapsed = 0.0f;
+    private int sequenceFpsFrames = 0;
     public float TargetFPS = 60.0f;
     private float lumVarianceMin = 0.01f;
     private float lumVarianceMax = 0.3f;
+<<<<<<< HEAD
     private float lumVarianceAdjustSpeed = 0.005f;
     private bool hasAutoScreenshot5 = false;
     private bool hasAutoScreenshot10 = false;
@@ -409,10 +415,290 @@ class Application : GameWindowBase
         if (KeyboardState[Keys.F12] == Keyboard.InputState.Touched) //스크린샷
         {
             string folderPath = "Screenshots";
+=======
+    private float lumVarianceAdjustSpeed = 0.005f;
+
+    private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
+    {
+        ( 0.0f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 1.0f, new Vector3(-10.0f, 0.0f, 0.0f),  30.0f,  90.0f),
+        ( 2.0f, new Vector3(  5.0f, 0.0f, 0.0f), -30.0f,  90.0f),
+        ( 3.0f, new Vector3( 20.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 4.0f, new Vector3( 45.0f, 0.0f, 0.0f),   0.0f,  65.0f),
+        ( 5.0f, new Vector3( 60.0f, 0.0f, 0.0f),   0.0f, 120.0f),
+        ( 6.0f, new Vector3( 85.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 7.0f, new Vector3( 85.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        ( 8.0f, new Vector3( 60.0f, 0.0f, 0.0f), 120.0f,  90.0f),
+        ( 9.0f, new Vector3( 45.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        (10.0f, new Vector3( 20.0f, 0.0f, 0.0f), 180.0f, 120.0f),
+        (11.0f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f)
+    };
+
+    private GpuPerFrameData gpuPerFrameData;
+    private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
+
+    private int fpsCounter;
+    private readonly Stopwatch fpsTimer = Stopwatch.StartNew();
+
+    private float animationTime;
+
+    private ModelLoader.Node? fanBladeNode;
+    private Transformation fanBladeBaseTransform;
+
+    private const float FanScale = 0.02f;
+    private const float FanBladeRpm = 3000.0f;
+    private const string FanModelFolder = "Resource/Models/Fan";
+
+    public Application(int width, int height, string title)
+        : base(width, height, title, 4, 6)
+    {
+    }
+    // 단계별 해상도
+    public int GraphicsLevel = 4;
+
+    public void SetGraphicsQuality(int level)
+    {
+        GraphicsLevel = level;
+        switch (level)
+        {
+            case 1: // Very Low
+                RequestRenderResolutionScale = 0.500f;
+                IsBloom = false;
+                IsVolumetricLighting = false;
+                break;
+            case 2: // Low
+                RequestRenderResolutionScale = 0.625f;
+                IsBloom = true;
+                IsVolumetricLighting = false;
+                break;
+            case 3: // Medium
+                RequestRenderResolutionScale = 0.750f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 4: // High - Default
+                RequestRenderResolutionScale = 0.875f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 5: // Very High
+                RequestRenderResolutionScale = 1.000f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+        }
+
+        // Display in console window (or log) that quality has changed
+        Console.WriteLine($"[System] Graphics Quality Changed to Level {level}");
+    }
+
+    public bool IsScopeMode = false;
+
+    protected override void OnRender(float dT)
+    {
+        MainThreadQueue.Execute();
+
+        HandleFrameRecorderLogic();
+
+        Camera.ProjectionSize = RenderResolution;
+        gpuPerFrameData.PrevView = gpuPerFrameData.View;
+        gpuPerFrameData.PrevProjView = gpuPerFrameData.ProjView;
+        gpuPerFrameData.Projection = Camera.GetProjectionMatrix();
+        gpuPerFrameData.InvProjection = Matrix4.Invert(gpuPerFrameData.Projection);
+        gpuPerFrameData.View = Camera.GetViewMatrix();
+        gpuPerFrameData.InvView = Matrix4.Invert(gpuPerFrameData.View);
+        gpuPerFrameData.ProjView = gpuPerFrameData.View * gpuPerFrameData.Projection;
+        gpuPerFrameData.InvProjView = Matrix4.Invert(gpuPerFrameData.ProjView);
+        gpuPerFrameData.CameraPos = Camera.Position;
+        gpuPerFrameData.NearPlane = Camera.NearPlane;
+        gpuPerFrameData.FarPlane = Camera.FarPlane;
+        gpuPerFrameData.DeltaRenderTime = dT;
+        gpuPerFrameData.Time = WindowTime;
+        gpuPerFrameData.Frame++;
+        gpuPerFrameDataBuffer.UploadElements(gpuPerFrameData);
+
+        LightManager.Update(out bool anyLightMoved);
+        UpdateFanBladeAnimation(animationTime);
+        ModelManager.Update(animationTime, out bool anyAnimatedNodeMoved, out bool anyMeshInstanceMoved);
+        //ModelManager.BVH.BlasesBuild(0, ModelManager.BVH.BlasesDesc.Length);
+
+        if (RequestPresentationResolution.HasValue || RequestRenderResolutionScale.HasValue)
+        {
+            float newResolutionScale = RequestRenderResolutionScale ?? RenderResolutionScale;
+            Vector2i newPresenRes = RequestPresentationResolution ?? PresentationResolution;
+            Vector2i newRenderRes = new Vector2i((int)(newPresenRes.X * newResolutionScale), (int)(newPresenRes.Y * newResolutionScale));
+            RequestPresentationResolution = null;
+            RequestRenderResolutionScale = null;
+
+            SetResolutions(newRenderRes, newPresenRes);
+        }
+
+        if (RequestRenderMode.HasValue)
+        {
+            SetRenderMode(RequestRenderMode.Value, RenderResolution, PresentationResolution);
+            RequestRenderMode = null;
+        }
+
+        if (RenderMode_ == RenderMode.Rasterizer)
+        {
+            //RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT);
+            RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT, MouseState.Position, new Vector2(WindowFramebufferSize.X, WindowFramebufferSize.Y), IsScopeMode);
+            if (RasterizerPipeline.IsConfigureGridMode)
+            {
+                TonemapAndGamma.Compute(RasterizerPipeline.Result);
+                BoxRenderer.Render(TonemapAndGamma.Result, gpuPerFrameData.ProjView, new Box(RasterizerPipeline.Voxelizer.GridMin, RasterizerPipeline.Voxelizer.GridMax));
+            }
+            else
+            {
+                if (IsBloom)
+                {
+                    Bloom.Compute(RasterizerPipeline.Result);
+                }
+
+                if (IsVolumetricLighting)
+                {
+                    VolumetricLight.Compute();
+                }
+
+                TonemapAndGamma.Compute(RasterizerPipeline.Result, IsBloom ? Bloom.Result : null, IsVolumetricLighting ? VolumetricLight.Result : null);
+                RasterizerPipeline.LightingVRS.DebugRender(TonemapAndGamma.Result);
+            }
+        }
+
+        if (RenderMode_ == RenderMode.PathTracer)
+        {
+            bool cameraMoved = gpuPerFrameData.PrevProjView != gpuPerFrameData.ProjView;
+            if (cameraMoved || anyAnimatedNodeMoved || anyMeshInstanceMoved || anyLightMoved)
+            {
+                PathTracerPipeline.ResetAccumulation();
+            }
+
+            PathTracerPipeline.Compute();
+
+            if (IsBloom)
+            {
+                Bloom.Compute(PathTracerPipeline.Result);
+            }
+
+            TonemapAndGamma.Settings.DoTonemapAndSrgbTransform = !PathTracerPipeline.DoDebugBVHTraversal;
+            TonemapAndGamma.Compute(PathTracerPipeline.Result, IsBloom ? Bloom.Result : null);
+        }
+
+        if (gui.SelectedEntity is Gui.SelectedEntityInfo.Mesh meshInfo)
+        {
+            ref readonly GpuMesh mesh = ref ModelManager.Meshes[meshInfo.MeshId];
+            ref readonly GpuMeshTransform meshTransform = ref ModelManager.MeshTransforms[meshInfo.MeshTransformId];
+
+            Box box = new Box(mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+            BoxRenderer.Render(TonemapAndGamma.Result, meshTransform.ModelMatrix * gpuPerFrameData.ProjView, box);
+        }
+        else if (gui.SelectedEntity is Gui.SelectedEntityInfo.Light lightInfo)
+        {
+            LightManager.TryGetLight(lightInfo.LightId, out CpuLight cpuLight);
+            ref GpuLight light = ref cpuLight.GpuLight;
+
+            Box box = new Box(light.Position - new Vector3(light.Radius), light.Position + new Vector3(light.Radius));
+            BoxRenderer.Render(TonemapAndGamma.Result, gpuPerFrameData.ProjView, box);
+        }
+        else if (gui.SelectedEntity is Gui.SelectedEntityInfo.Node nodeInfo)
+        {
+            ModelLoader.Node.Traverse(nodeInfo.Node_, (node) =>
+            {
+                if (node.HasMeshes)
+                {
+                    Range meshInstanceRange = ModelManager.GetMeshesInstanceRange(node.MeshRange);
+                    for (int i = meshInstanceRange.Start; i < meshInstanceRange.End; i++)
+                    {
+                        ref readonly GpuMeshInstance meshInstance = ref ModelManager.MeshInstances[i];
+
+                        ref readonly GpuMesh mesh = ref ModelManager.Meshes[meshInstance.MeshId];
+                        ref readonly GpuMeshTransform meshTransform = ref ModelManager.MeshTransforms[meshInstance.MeshTransformId];
+
+                        Box box = new Box(mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+                        BoxRenderer.Render(TonemapAndGamma.Result, meshTransform.ModelMatrix * gpuPerFrameData.ProjView, box);
+                    }
+                }
+            });
+        }
+
+        BBG.Rendering.SetViewport(WindowFramebufferSize);
+        if (RenderImGui)
+        {
+            gui.Draw(this, dT);
+        }
+        else
+        {
+            BBG.Rendering.CopyTextureToSwapchain(TonemapAndGamma.Result);
+        }
+
+        SwapBuffers();
+        PollEvents();
+
+        fpsCounter++;
+        if (IsSequenceMode)
+        {
+            sequenceFpsFrames++;
+            sequenceFpsElapsed += dT;
+            if (sequenceFpsElapsed > 0.0f)
+            {
+                AverageFramesPerSecond = sequenceFpsFrames / sequenceFpsElapsed;
+            }
+        }
+
+        // Framerate-aware VRS
+        float currentFPS = 1.0f / dT;
+        float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+        bool isSceneComplex = currentLumVariance < 0.15f;
+        if (currentFPS < TargetFPS - 5.0f)
+        {
+            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
+            currentLumVariance += adjustSpeed;
+            currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+        }
+        else if (currentFPS > TargetFPS + 5.0f)
+        {
+            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
+            currentLumVariance -= adjustSpeed;
+            currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
+        }
+        var settings = RasterizerPipeline.LightingVRS.Settings;
+        settings.LumVarianceFactor = currentLumVariance;
+        RasterizerPipeline.LightingVRS.Settings = settings;
+
+        if (fpsTimer.ElapsedMilliseconds >= 1000)
+        {
+            MeasuredFramesPerSecond = fpsCounter;
+            WindowTitle = $"IDKEngine FPS: {MeasuredFramesPerSecond} ({RenderResolution.X}x{RenderResolution.Y})";
+            fpsCounter = 0;
+            fpsTimer.Restart();
+
+            if (!Debugger.IsAttached)
+            {
+                // When loading a model like IntelSponza, SharpGLTF and possibly other code
+                // creates a lot of garbage and the GC doesn't return it to the OS even after waiting.
+                // I don't like that so let's force Collection every second when running standalone
+                GC.Collect();
+            }
+        }
+    }
+
+    protected override void OnUpdate(float dT)
+    {
+        gui.Update(this);
+
+        if (KeyboardState[Keys.Escape] == Keyboard.InputState.Pressed)
+        {
+            ShouldClose();
+        }
+
+        if (KeyboardState[Keys.F12] == Keyboard.InputState.Touched) //스크린샷
+        {
+            string folderPath = "Screenshots";
+>>>>>>> 58fc86e (Add corridor map with Framerate-aware VRS)
             System.IO.Directory.CreateDirectory(folderPath);
-            
+
             string fileName = $"{folderPath}/Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-            
+
             Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
         }
 
@@ -422,15 +708,10 @@ class Application : GameWindowBase
             for (int i = 0; i < lightsToAdd; i++)
             {
                 Vector3 pos = new Vector3(RNG.RandomFloat(-5.0f, 5.0f), 2.0f, RNG.RandomFloat(-2.0f, 2.0f));
-                Vector3 color = RNG.RandomVec3(20.0f, 60.0f); 
+                Vector3 color = RNG.RandomVec3(20.0f, 60.0f);
                 CpuLight newLight = new CpuLight(pos, color, 0.4f);
-                
-                newLight.Velocity = new Vector3(
-                    RNG.RandomFloat(-15.0f, 15.0f),
-                    RNG.RandomFloat(-5.0f, 10.0f),
-                    RNG.RandomFloat(-15.0f, 15.0f)
-                );
 
+<<<<<<< HEAD
                 if (LightManager.AddLight(newLight))
                 {
                     int newLightIndex = LightManager.Count - 1;
@@ -605,9 +886,192 @@ class Application : GameWindowBase
 
                         Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
                         Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
+=======
+                newLight.Velocity = new Vector3(
+                    RNG.RandomFloat(-15.0f, 15.0f),
+                    RNG.RandomFloat(-5.0f, 10.0f),
+                    RNG.RandomFloat(-15.0f, 15.0f)
+                );
+
+                if (LightManager.AddLight(newLight))
+                {
+                    int newLightIndex = LightManager.Count - 1;
+                    CpuPointShadow pointShadow = new CpuPointShadow(256, RenderResolution, new Vector2(newLight.GpuLight.Radius, 60.0f));
+                    if (!LightManager.CreatePointShadowForLight(pointShadow, newLightIndex))
+                    {
+                        pointShadow.Dispose();
+                    }
+                }
+            }
+            Console.WriteLine($"라이트 5개 생성\n현재 총 광원 수: {LightManager.Count}");
+        }
+
+        if (KeyboardState[Keys.K] == Keyboard.InputState.Touched) //광원 삭제
+        {
+            int baseLightCount = 3;
+
+            while (LightManager.Count > baseLightCount)
+            {
+                LightManager.DeleteLight(LightManager.Count - 1);
+            }
+        }
+
+        if (KeyboardState[Keys.D2] == Keyboard.InputState.Touched) //시퀀스 모드
+        {
+            IsSequenceMode = !IsSequenceMode;
+            sequenceTimer = 0.0f;
+            hasAutoScreenshot5 = false;
+            hasAutoScreenshot10 = false;
+            hasAutoScreenshot15 = false;
+            sequenceFpsElapsed = 0.0f;
+            sequenceFpsFrames = 0;
+            AverageFramesPerSecond = 0.0f;
+        }
+
+        if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
+        {
+            if (KeyboardState[Keys.V] == Keyboard.InputState.Touched)
+            {
+                WindowVSync = !WindowVSync;
+            }
+            if (KeyboardState[Keys.G] == Keyboard.InputState.Touched)
+            {
+                RenderImGui = !RenderImGui;
+                if (!RenderImGui)
+                {
+                    RequestPresentationResolution = WindowFramebufferSize;
+                }
+            }
+            if (KeyboardState[Keys.F11] == Keyboard.InputState.Touched)
+            {
+                WindowFullscreen = !WindowFullscreen;
+            }
+            if (KeyboardState[Keys.T] == Keyboard.InputState.Touched)
+            {
+                TimeEnabled = !TimeEnabled;
+            }
+            if (KeyboardState[Keys.D1] == Keyboard.InputState.Touched)
+            {
+                BBG.AbstractShaderProgram.RecompileAll();
+                PathTracerPipeline?.ResetAccumulation();
+            }
+            if (KeyboardState[Keys.E] == Keyboard.InputState.Touched)
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled)
+                {
+                    MouseState.CursorMode = CursorModeValue.CursorNormal;
+                    Camera.Velocity = Vector3.Zero;
+                }
+                else
+                {
+                    MouseState.CursorMode = CursorModeValue.CursorDisabled;
+                }
+            }
+        }
+
+        if (KeyboardState[Keys.F1] == Keyboard.InputState.Touched) SetGraphicsQuality(1);
+        if (KeyboardState[Keys.F2] == Keyboard.InputState.Touched) SetGraphicsQuality(2);
+        if (KeyboardState[Keys.F3] == Keyboard.InputState.Touched) SetGraphicsQuality(3);
+        if (KeyboardState[Keys.F4] == Keyboard.InputState.Touched) SetGraphicsQuality(4);
+        if (KeyboardState[Keys.F5] == Keyboard.InputState.Touched) SetGraphicsQuality(5);
+
+        // 스코프 모드
+        IsScopeMode = MouseState.IsButtonDown(MouseButton.Right);
+
+        if (IsScopeMode)
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(20.0f);
+        }
+        else
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(67.0f);
+        }
+
+        if (RecorderVars.State != FrameRecorderState.Replaying)
+        {
+            if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureMouse)
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled && MouseState[MouseButton.Left] == Keyboard.InputState.Touched)
+                {
+                    Vector3 force = Camera.ViewDir * 5.0f;
+
+                    CpuLight newLight = new CpuLight(Camera.Position + Camera.ViewDir * 0.5f, RNG.RandomVec3(32.0f, 88.0f), 0.3f);
+                    newLight.Velocity = Camera.Velocity;
+                    newLight.AddImpulse(force);
+
+                    Camera.AddImpulse(-force);
+
+                    if (LightManager.AddLight(newLight))
+                    {
+                        int newLightIndex = LightManager.Count - 1;
+                        CpuPointShadow pointShadow = new CpuPointShadow(256, RenderResolution, new Vector2(newLight.GpuLight.Radius, 60.0f));
+                        if (!LightManager.CreatePointShadowForLight(pointShadow, newLightIndex))
+                        {
+                            pointShadow.Dispose();
+                        }
+                    }
+                }
+            }
+
+            if (TimeEnabled)
+            {
+                animationTime += dT;
+            }
+
+            if (IsSequenceMode) //시퀀스 중 카메라 이동
+            {
+                sequenceTimer += dT;
+
+                if (IsSequenceMode)
+                {
+                    if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_5sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot5 = true;
+                    }
+                    if (sequenceTimer >= 10.0f && !hasAutoScreenshot10)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_10sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot10 = true;
+                    }
+                    if (sequenceTimer >= 15.0f && !hasAutoScreenshot15)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_15sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot15 = true;
+                    }
+                }
+
+                float maxTime = waypoints[^1].Time;
+
+                if (sequenceTimer > maxTime)
+                {
+                    sequenceTimer = 0.0f;
+                }
+
+                for (int i = 0; i < waypoints.Length - 1; i++)
+                {
+                    if (sequenceTimer >= waypoints[i].Time && sequenceTimer <= waypoints[i + 1].Time)
+                    {
+                        float t = (sequenceTimer - waypoints[i].Time) / (waypoints[i + 1].Time - waypoints[i].Time);
+
+                        Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
+                        Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
+>>>>>>> 58fc86e (Add corridor map with Framerate-aware VRS)
                         Camera.Pitch = MathHelper.Lerp(waypoints[i].Pitch, waypoints[i + 1].Pitch, t);
-                        
-                        Camera.Velocity = Vector3.Zero; 
+
+                        Camera.Velocity = Vector3.Zero;
                         break;
                     }
                 }
@@ -696,51 +1160,14 @@ class Application : GameWindowBase
 
         if (true)
         {
-            ModelLoader.Model sponza = ModelLoader.LoadGltfFromFile("Resource/Models/SponzaCompressed/Sponza.gltf", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -1.0f, 0.0f).GetMatrix()).Value;
-            sponza.GpuModel.Meshes[63].EmissiveBias = 10.0f;
-            sponza.GpuModel.Meshes[70].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[3].EmissiveBias = 12.0f;
-            sponza.GpuModel.Meshes[99].EmissiveBias = 15.0f;
-            sponza.GpuModel.Meshes[97].EmissiveBias = 9.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[38].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[40].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            //sponza.GpuModel.Meshes[46].SpecularBias = 1.0f;
-            //sponza.GpuModel.Meshes[46].RoughnessBias = -0.436f; // -0.665
-            //sponza.GpuModel.Meshes[46].NormalMapStrength = 0.0f;
-
-            ModelLoader.Model lucy = ModelLoader.LoadGltfFromFile("Resource/Models/LucyCompressed/Lucy.gltf", new Transformation().WithScale(0.8f).WithRotationDeg(0.0f, 90.0f, 0.0f).WithTranslation(-1.68f, 2.3f, 0.0f).GetMatrix()).Value;
-            lucy.GpuModel.Meshes[0].SpecularBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TransmissionBias = 0.98f;
-            lucy.GpuModel.Meshes[0].IORBias = -0.326f;
-            lucy.GpuModel.Meshes[0].AbsorbanceBias = new Vector3(0.81f, 0.18f, 0.0f);
-            lucy.GpuModel.Meshes[0].RoughnessBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TintOnTransmissive = false;
-            lucy.GpuModel.Materials[0].IsVolumetric = true;
-
-            ModelLoader.Model helmet = ModelLoader.LoadGltfFromFile("Resource/Models/HelmetCompressed/Helmet.gltf", new Transformation().WithRotationDeg(0.0f, 45.0f, 0.0f).GetMatrix()).Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Bistro\Bistro.glb").Value;
-            //ModelLoader.Model tes25t = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\BistroRot25Z.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SanMiguel\SanMiguel.gltf").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\HighPolyDragon.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SponzaMergedRotated45.glb").Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\untitled.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\DragonMerged.glb").Value;
-
-            // Merging a model with many meshes into one can more than 2x Ray Tracing performance! (even with TLAS)
-            ModelLoader.HoistMeshPrimitives(ref sponza, true);
-
-            ModelManager.Add(sponza, lucy, helmet);
-            TryAddFanModel();
+            ModelLoader.Model corridor = ModelLoader.LoadGltfFromFile("Resource/Models/corridor/corridor.glb", new Transformation().WithScale(0.1f).WithTranslation(0.0f, -10.0f, 0.0f).GetMatrix()).Value;
+            ModelManager.Add(corridor);
 
             SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
 
-            LightManager.AddLight(new CpuLight(new Vector3(-4.5f, 5.7f, -2.0f), new Vector3(429.8974f, 22.459948f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(-0.5f, 5.7f, -2.0f), new Vector3(8.773416f, 506.7525f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), /*new Vector3(-4.0f, 0.0f, 0.0f), */new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(-0.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(40.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(80.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
 
             for (int i = 0; i < 3; i++)
             {
