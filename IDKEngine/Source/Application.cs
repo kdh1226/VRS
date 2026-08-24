@@ -125,25 +125,26 @@ class Application : GameWindowBase
     public bool IsSequenceMode = false;
     public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
+    private float sequenceFpsElapsed = 0.0f;
+    private int sequenceFpsFrames = 0;
     public float TargetFPS = 60.0f;
     private float lumVarianceMin = 0.01f;
     private float lumVarianceMax = 0.3f;
     private float lumVarianceAdjustSpeed = 0.005f;
-    private bool hasAutoScreenshot5 = false;
-    private bool hasAutoScreenshot10 = false;
-    private bool hasAutoScreenshot15 = false;
-    private float sequenceFpsElapsed = 0.0f;
-    private int sequenceFpsFrames = 0;
-    
+
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
     {
-        (0.0f,  new Vector3(-13.5f, 6.5f, -0.5f),  0.0f, 120.0f),
-        (5.0f,  new Vector3(-10.0f, 1.2f, -0.5f),  0.0f,  95.0f),
-        (10.0f, new Vector3(-1.0f, 0.4f, -3.4f),   90.0f,  70.0f),
-        (15.0f, new Vector3(4.4f, 1.3f, 0.0f),    180.0f,  85.0f),
-        (20.0f, new Vector3(-1.7f, 2.0f, 2.3f),   270.0f,  65.0f),
-        (25.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f),
-        (28.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f)
+        (0.0f, new Vector3(-2.84f, 2.04f, 0.00f), -25.81f, 90.30f),
+        (1.0f, new Vector3(-2.84f, 2.04f, 0.00f), -25.81f, 90.30f),
+        (3.0f, new Vector3(-0.345f, 2.04f, -1.26f), -28.33f, 86.07f),
+        (6.0f, new Vector3(1.88f, 2.04f, -1.87f), -109.69f, 89.94f),
+        (10.0f, new Vector3(5.57f, 2.04f, -7.84f), -56.59f, 89.04f),
+        (13.0f, new Vector3(4.98f, 2.17f, -6.66f), 75.89f, 88.59f),
+        (18.0f, new Vector3(11.39f, 2.675f, -2.01f), 171.83f, 87.96f),
+        (21.0f, new Vector3(7.72f, 2.625f, -0.65f), 47.00f, 92.37f),
+        (24.0f, new Vector3(5.42f, 2.52f, -0.02f), -43.18f, 85.98f),
+        (27.0f, new Vector3(0.01f, 2.89f, -1.61f), 19.46f, 95.70f),
+        (30.0f, new Vector3(-2.84f, 2.04f, 0.00f), -25.81f, 90.30f)
     };
 
     private GpuPerFrameData gpuPerFrameData;
@@ -153,13 +154,6 @@ class Application : GameWindowBase
     private readonly Stopwatch fpsTimer = Stopwatch.StartNew();
 
     private float animationTime;
-
-    private ModelLoader.Node? fanBladeNode;
-    private Transformation fanBladeBaseTransform;
-
-    private const float FanScale = 0.02f;
-    private const float FanBladeRpm = 3000.0f;
-    private const string FanModelFolder = "Resource/Models/Fan";
 
     public Application(int width, int height, string title)
         : base(width, height, title, 4, 6)
@@ -230,7 +224,6 @@ class Application : GameWindowBase
         gpuPerFrameDataBuffer.UploadElements(gpuPerFrameData);
 
         LightManager.Update(out bool anyLightMoved);
-        UpdateFanBladeAnimation(animationTime);
         ModelManager.Update(animationTime, out bool anyAnimatedNodeMoved, out bool anyMeshInstanceMoved);
         //ModelManager.BVH.BlasesBuild(0, ModelManager.BVH.BlasesDesc.Length);
 
@@ -361,14 +354,17 @@ class Application : GameWindowBase
         // Framerate-aware VRS
         float currentFPS = 1.0f / dT;
         float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+        bool isSceneComplex = currentLumVariance < 0.15f;
         if (currentFPS < TargetFPS - 5.0f)
         {
-            currentLumVariance += lumVarianceAdjustSpeed;
+            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
+            currentLumVariance += adjustSpeed;
             currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
         }
         else if (currentFPS > TargetFPS + 5.0f)
         {
-            currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
+            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
+            currentLumVariance -= adjustSpeed;
             currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
         }
         var settings = RasterizerPipeline.LightingVRS.Settings;
@@ -405,9 +401,9 @@ class Application : GameWindowBase
         {
             string folderPath = "Screenshots";
             System.IO.Directory.CreateDirectory(folderPath);
-            
+
             string fileName = $"{folderPath}/Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-            
+
             Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
         }
 
@@ -417,9 +413,9 @@ class Application : GameWindowBase
             for (int i = 0; i < lightsToAdd; i++)
             {
                 Vector3 pos = new Vector3(RNG.RandomFloat(-5.0f, 5.0f), 2.0f, RNG.RandomFloat(-2.0f, 2.0f));
-                Vector3 color = RNG.RandomVec3(20.0f, 60.0f); 
+                Vector3 color = RNG.RandomVec3(20.0f, 60.0f);
                 CpuLight newLight = new CpuLight(pos, color, 0.4f);
-                
+
                 newLight.Velocity = new Vector3(
                     RNG.RandomFloat(-15.0f, 15.0f),
                     RNG.RandomFloat(-5.0f, 10.0f),
@@ -453,9 +449,6 @@ class Application : GameWindowBase
         {
             IsSequenceMode = !IsSequenceMode;
             sequenceTimer = 0.0f;
-            hasAutoScreenshot5 = false;
-            hasAutoScreenshot10 = false;
-            hasAutoScreenshot15 = false;
             sequenceFpsElapsed = 0.0f;
             sequenceFpsFrames = 0;
             AverageFramesPerSecond = 0.0f;
@@ -508,6 +501,19 @@ class Application : GameWindowBase
         if (KeyboardState[Keys.F4] == Keyboard.InputState.Touched) SetGraphicsQuality(4);
         if (KeyboardState[Keys.F5] == Keyboard.InputState.Touched) SetGraphicsQuality(5);
 
+        //카메라 시퀀스 제작용 임시 코드
+        if (KeyboardState[Keys.P] == Keyboard.InputState.Touched)
+        {
+            Console.WriteLine(
+                $"({sequenceTimer:F1}f, " +
+                $"new Vector3({Camera.Position.X:F3}f, " +
+                $"{Camera.Position.Y:F3}f, " +
+                $"{Camera.Position.Z:F3}f), " +
+                $"{Camera.Yaw:F3}f, " +
+                $"{Camera.Pitch:F3}f),"
+            );
+        }
+
         // 스코프 모드
         IsScopeMode = MouseState.IsButtonDown(MouseButton.Right);
 
@@ -554,41 +560,9 @@ class Application : GameWindowBase
             if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
                 sequenceTimer += dT;
-
-                if (IsSequenceMode)
-                {
-                    if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
-                    {
-                        string folderPath = "Screenshots";
-                        System.IO.Directory.CreateDirectory(folderPath);
-                        string fileName = $"{folderPath}/AUTO_5sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
-                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
-                        hasAutoScreenshot5 = true;
-                    }
-                    if (sequenceTimer >= 10.0f && !hasAutoScreenshot10)
-                    {
-                        string folderPath = "Screenshots";
-                        System.IO.Directory.CreateDirectory(folderPath);
-                        string fileName = $"{folderPath}/AUTO_10sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
-                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
-                        hasAutoScreenshot10 = true;
-                    }
-                    if (sequenceTimer >= 15.0f && !hasAutoScreenshot15)
-                    {
-                        string folderPath = "Screenshots";
-                        System.IO.Directory.CreateDirectory(folderPath);
-                        string fileName = $"{folderPath}/AUTO_15sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
-                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
-                        hasAutoScreenshot15 = true;
-                    }
-                }
-
                 float maxTime = waypoints[^1].Time;
 
-                if (sequenceTimer > maxTime) 
+                if (sequenceTimer > maxTime)
                 {
                     sequenceTimer = 0.0f;
                 }
@@ -602,8 +576,8 @@ class Application : GameWindowBase
                         Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
                         Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
                         Camera.Pitch = MathHelper.Lerp(waypoints[i].Pitch, waypoints[i + 1].Pitch, t);
-                        
-                        Camera.Velocity = Vector3.Zero; 
+
+                        Camera.Velocity = Vector3.Zero;
                         break;
                     }
                 }
@@ -692,53 +666,27 @@ class Application : GameWindowBase
 
         if (true)
         {
-            ModelLoader.Model sponza = ModelLoader.LoadGltfFromFile("Resource/Models/SponzaCompressed/Sponza.gltf", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -1.0f, 0.0f).GetMatrix()).Value;
-            sponza.GpuModel.Meshes[63].EmissiveBias = 10.0f;
-            sponza.GpuModel.Meshes[70].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[3].EmissiveBias = 12.0f;
-            sponza.GpuModel.Meshes[99].EmissiveBias = 15.0f;
-            sponza.GpuModel.Meshes[97].EmissiveBias = 9.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[38].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[40].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            //sponza.GpuModel.Meshes[46].SpecularBias = 1.0f;
-            //sponza.GpuModel.Meshes[46].RoughnessBias = -0.436f; // -0.665
-            //sponza.GpuModel.Meshes[46].NormalMapStrength = 0.0f;
+            ModelLoader.Model bistroInterior =
+                ModelLoader.LoadGltfFromFile("Resource/Models/BistroCompressed/BistroInterior.glb").Value;
 
-            ModelLoader.Model lucy = ModelLoader.LoadGltfFromFile("Resource/Models/LucyCompressed/Lucy.gltf", new Transformation().WithScale(0.8f).WithRotationDeg(0.0f, 90.0f, 0.0f).WithTranslation(-1.68f, 2.3f, 0.0f).GetMatrix()).Value;
-            lucy.GpuModel.Meshes[0].SpecularBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TransmissionBias = 0.98f;
-            lucy.GpuModel.Meshes[0].IORBias = -0.326f;
-            lucy.GpuModel.Meshes[0].AbsorbanceBias = new Vector3(0.81f, 0.18f, 0.0f);
-            lucy.GpuModel.Meshes[0].RoughnessBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TintOnTransmissive = false;
-            lucy.GpuModel.Materials[0].IsVolumetric = true;
-
-            ModelLoader.Model helmet = ModelLoader.LoadGltfFromFile("Resource/Models/HelmetCompressed/Helmet.gltf", new Transformation().WithRotationDeg(0.0f, 45.0f, 0.0f).GetMatrix()).Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Bistro\Bistro.glb").Value;
-            //ModelLoader.Model tes25t = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\BistroRot25Z.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SanMiguel\SanMiguel.gltf").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\HighPolyDragon.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SponzaMergedRotated45.glb").Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\untitled.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\DragonMerged.glb").Value;
-
-            // Merging a model with many meshes into one can more than 2x Ray Tracing performance! (even with TLAS)
-            ModelLoader.HoistMeshPrimitives(ref sponza, true);
-
-            ModelManager.Add(sponza, lucy, helmet);
-            TryAddFanModel();
+            ModelManager.Add(bistroInterior);
 
             SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
 
-            LightManager.AddLight(new CpuLight(new Vector3(-4.5f, 5.7f, -2.0f), new Vector3(429.8974f, 22.459948f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(-0.5f, 5.7f, -2.0f), new Vector3(8.773416f, 506.7525f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), /*new Vector3(-4.0f, 0.0f, 0.0f), */new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
+            /* 메모리 초과로 테스트 가능한 사람만 할 것
+            ModelLoader.Model bistroExterior =
+                ModelLoader.LoadGltfFromFile("Resource/Models/BistroCompressed/BistroExterior.glb").Value;
 
-            for (int i = 0; i < 3; i++)
+            ModelManager.Add(bistroExterior);
+
+            SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize); */
+
+            LightManager.AddLight(new CpuLight(new Vector3(6.13f, 2.76f, -8.49f), new Vector3(120.0f, 105.0f, 85.0f), 0.2f));
+            LightManager.AddLight(new CpuLight(new Vector3(4.26f, 2.9f, -4.92f), new Vector3(120.0f, 105.0f, 85.0f), 0.2f));
+            LightManager.AddLight(new CpuLight(new Vector3(5.0f, 2.9f, -0.49f), /*new Vector3(-4.0f, 0.0f, 0.0f), */new Vector3(120.0f, 105.0f, 85.0f), 0.2f));
+            LightManager.AddLight(new CpuLight(new Vector3(7.97f, 2.9f, 0.98f), new Vector3(120.0f, 105.0f, 85.0f), 0.2f));
+
+            for (int i = 0; i < 4; i++)
             {
                 if (LightManager.TryGetLight(i, out CpuLight light))
                 {
@@ -812,92 +760,6 @@ class Application : GameWindowBase
                 Logger.Log(Logger.LogLevel.Warn, $"Dropped file \"{Path.GetFileName(path)}\" is unsupported. Only .gltf and .glb");
             }
         }
-    }
-
-    private void TryAddFanModel()
-    {
-        string fanPath = Path.Combine(FanModelFolder, "fan.gltf");
-
-        if (!File.Exists(fanPath))
-        {
-            Logger.Log(Logger.LogLevel.Warn, $"Fan model not found: {fanPath}");
-            return;
-        }
-
-        // Sponza 안에 배치할 선풍기 위치/크기
-        Matrix4 fanTransform = new Transformation()
-            .WithScale(FanScale)
-            .WithRotationDeg(0.0f, 90.0f, 0.0f)
-            .WithTranslation(3.0f, -1.0f, 0.0f)
-            .GetMatrix();
-
-        if (ModelLoader.LoadGltfFromFile(fanPath, fanTransform) is not ModelLoader.Model fan)
-        {
-            Logger.Log(Logger.LogLevel.Error, $"Failed loading fan model \"{fanPath}\"");
-            return;
-        }
-
-        int fanModelIndex = ModelManager.CpuModels.Length;
-        ModelManager.Add(fan);
-
-        // 모델 node 이름에서 날개로 보이는 node를 탐색
-        fanBladeNode = FindFanBladeNode(ModelManager.CpuModels[fanModelIndex].Root);
-
-        if (fanBladeNode == null)
-        {
-            Logger.Log(Logger.LogLevel.Warn, "Fan loaded, but no blade-like node was found.");
-            LogFanNodeNames(ModelManager.CpuModels[fanModelIndex].Root);
-            return;
-        }
-
-        fanBladeBaseTransform = fanBladeNode.LocalTransform;
-        Logger.Log(Logger.LogLevel.Info, $"Fan loaded. Animating blade node \"{fanBladeNode.Name}\".");
-    }
-
-    private static ModelLoader.Node? FindFanBladeNode(ModelLoader.Node root)
-    {
-        ModelLoader.Node? result = null;
-
-        ModelLoader.Node.Traverse(root, (node) =>
-        {
-            if (result != null)
-            {
-                return;
-            }
-
-            string name = node.Name;
-            if (name.Contains("blade", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("propeller", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("rotor", StringComparison.OrdinalIgnoreCase))
-            {
-                result = node;
-            }
-        });
-
-        return result;
-    }
-
-    private static void LogFanNodeNames(ModelLoader.Node root)
-    {
-        ModelLoader.Node.Traverse(root, (node) =>
-        {
-            Logger.Log(Logger.LogLevel.Info, $"Fan node: \"{node.Name}\"");
-        });
-    }
-
-    private void UpdateFanBladeAnimation(float time)
-    {
-        if (fanBladeNode == null)
-        {
-            return;
-        }
-
-        float revolutionsPerSecond = FanBladeRpm / 60.0f;
-        float angleRad = time * revolutionsPerSecond * MathF.Tau;
-
-        Transformation animated = fanBladeBaseTransform;
-        animated.Rotation = Quaternion.FromAxisAngle(Vector3.UnitZ, angleRad) * fanBladeBaseTransform.Rotation;
-        fanBladeNode.LocalTransform = animated;
     }
 
     /// <summary>
