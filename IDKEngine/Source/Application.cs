@@ -130,29 +130,23 @@ class Application : GameWindowBase
     private bool hasAutoScreenshot15 = false;
     private float sequenceFpsElapsed = 0.0f;
     private int sequenceFpsFrames = 0;
+    public bool IsAutoScreenshot = false;
+    public bool IsFramerateAwareVRS = false;
     public float TargetFPS = 60.0f;
     private float lumVarianceMin = 0.01f;
     private float lumVarianceMax = 0.3f;
     private float lumVarianceAdjustSpeed = 0.005f;
 
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
-    {
-        (0.0f, new Vector3(0.0f, -5.0f, -18.0f),  88.0f,  52.0f),
-        (3.0f, new Vector3(6.0f,  0.0f, -12.0f), 115.0f,  67.5f),
-        (6.0f, new Vector3(12.0f,  5.0f, -7.0f), 146.0f,  93.0f),
-        (9.0f, new Vector3(15.0f, 12.0f, 1.0f), 190.0f, 115.0f),
-        (12.0f, new Vector3(10.0f, 13.0f, 7.0f), 220.0f, 124.0f),
-        (15.0f, new Vector3(6.0f, 13.0f, 12.0f), 240.0f, 125.0f),
-        (18.0f, new Vector3(0.7f, 13.0f, 15.0f), 269.0f, 119.0f),
-        (21.0f, new Vector3(-8.0f, 13.0f, 12.0f), 300.0f, 110.0f),
-        (24.0f, new Vector3(-15.0f,  9.0f, 7.0f), 340.0f,  90.0f),
-        (27.0f, new Vector3(-14.0f,  5.0f, 2.0f), 350.0f,  80.0f),
-        (30.0f, new Vector3(-12.0f, 2.0f, -4.0f), 380.0f,  70.0f),
-        (33.0f, new Vector3(-7f, 0.0f, -10.0f),  407.0f,  60.0f),
-        (36.0f, new Vector3(-3.0f, -2.0f, -14.0f),  440.0f,  57.0f),
-        (39.0f, new Vector3(0.0f, -5.0f, -18.0f),  448.0f,  52.0f),
-        (41.0f, new Vector3(0.0f, -5.0f, -18.0f),  448.0f,  52.0f),
-    };
+{
+    (0.0f,  new Vector3(0.0f, -5.0f, -18.0f),  88.0f,  52.0f),
+    (5.0f,  new Vector3(6.0f,  0.0f, -12.0f), 115.0f,  67.5f),
+    (10.0f, new Vector3(12.0f,  5.0f, -7.0f), 146.0f,  93.0f),
+    (15.0f, new Vector3(15.0f, 12.0f, 1.0f),  190.0f, 115.0f),
+    (20.0f, new Vector3(10.0f, 13.0f, 7.0f),  220.0f, 124.0f),
+    (25.0f, new Vector3(6.0f, 13.0f, 12.0f),  240.0f, 125.0f),
+    (28.0f, new Vector3(0.7f, 13.0f, 15.0f),  269.0f, 119.0f),
+};
 
     private GpuPerFrameData gpuPerFrameData;
     private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
@@ -365,25 +359,28 @@ class Application : GameWindowBase
             }
         }
 
-        // Framerate-aware VRS
-        float currentFPS = 1.0f / dT;
-        float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-        bool isSceneComplex = currentLumVariance < 0.15f;
-        if (currentFPS < TargetFPS - 5.0f)
+        if (IsFramerateAwareVRS)
         {
-            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
-            currentLumVariance += adjustSpeed;
-            currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            // Framerate-aware VRS
+            float currentFPS = 1.0f / dT;
+            float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+            bool isSceneComplex = currentLumVariance < 0.15f;
+            if (currentFPS < TargetFPS - 5.0f)
+            {
+                float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
+                currentLumVariance += adjustSpeed;
+                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            }
+            else if (currentFPS > TargetFPS + 5.0f)
+            {
+                float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
+                currentLumVariance -= adjustSpeed;
+                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
+            }
+            var settings = RasterizerPipeline.LightingVRS.Settings;
+            settings.LumVarianceFactor = currentLumVariance;
+            RasterizerPipeline.LightingVRS.Settings = settings;
         }
-        else if (currentFPS > TargetFPS + 5.0f)
-        {
-            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
-            currentLumVariance -= adjustSpeed;
-            currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
-        }
-        var settings = RasterizerPipeline.LightingVRS.Settings;
-        settings.LumVarianceFactor = currentLumVariance;
-        RasterizerPipeline.LightingVRS.Settings = settings;
 
         if (fpsTimer.ElapsedMilliseconds >= 1000)
         {
@@ -565,7 +562,7 @@ class Application : GameWindowBase
             {
                 sequenceTimer += dT;
 
-                if (IsSequenceMode)
+                if (IsAutoScreenshot)
                 {
                     if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
                     {

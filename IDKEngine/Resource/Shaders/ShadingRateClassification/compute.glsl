@@ -20,7 +20,6 @@ layout(std140, binding = 0) uniform SettingsUBO
     int IsFoveated;
     int VrsMode;
     int IsMotionBlurVRS;
-
     // Motion-adaptive VRS thresholds
     float MotionThresholdLow;
     float MotionThresholdHigh;
