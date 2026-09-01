@@ -597,7 +597,13 @@ class Application : GameWindowBase
 
                 if (sequenceTimer > maxTime)
                 {
+                    float avgFps = sequenceFpsElapsed > 0 ? sequenceFpsFrames / sequenceFpsElapsed : 0;
+                    Console.WriteLine($"=== 시퀀스 완료 === 평균 FPS: {avgFps:F1}");
                     sequenceTimer = 0.0f;
+                    sequenceFpsElapsed = 0.0f;
+                    sequenceFpsFrames = 0;
+                    AverageFramesPerSecond = 0.0f;
+                    IsSequenceMode = false;
                 }
 
                 for (int i = 0; i < waypoints.Length - 1; i++)
