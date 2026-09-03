@@ -35,6 +35,9 @@ class LightingShadingRateClassifier : IDisposable
 
         public int VrsMode;
         public int IsMotionBlurVRS = 0;
+        public int IsTemporalStabilization = 1;
+        public int TemporalStableFrames = 3;
+        public int TemporalHoldFrames = 4;
 
         // Motion-adaptive VRS threshold
         public float MotionThresholdLow = 0.05f;
@@ -49,6 +52,8 @@ class LightingShadingRateClassifier : IDisposable
 
     public BBG.Texture Result;
     private BBG.Texture debugTexture;
+    private readonly BBG.Texture[] temporalHistory = new BBG.Texture[2];
+    private int temporalHistoryReadIndex;
     private readonly BBG.AbstractShaderProgram shaderProgram;
     private readonly BBG.AbstractShaderProgram debugProgram;
     public LightingShadingRateClassifier(Vector2i size, in GpuSettings settings)
@@ -77,12 +82,15 @@ class LightingShadingRateClassifier : IDisposable
 
             BBG.Cmd.BindImageUnit(Result, 0);
             BBG.Cmd.BindImageUnit(debugTexture, 1);
+            BBG.Cmd.BindImageUnit(temporalHistory[1 - temporalHistoryReadIndex], 2);
             BBG.Cmd.BindTextureUnit(shaded, 0);
             BBG.Cmd.BindTextureUnit(frequencyMap ?? Result, 2);
+            BBG.Cmd.BindTextureUnit(temporalHistory[temporalHistoryReadIndex], 3);
             BBG.Cmd.UseShaderProgram(shaderProgram);
 
             BBG.Computing.Dispatch(MyMath.DivUp(shaded.Width, TILE_SIZE), MyMath.DivUp(shaded.Height, TILE_SIZE), 1);
             BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit);
+            temporalHistoryReadIndex = 1 - temporalHistoryReadIndex;
         });
     }
 
@@ -121,6 +129,16 @@ class LightingShadingRateClassifier : IDisposable
         debugTexture = new BBG.Texture(BBG.Texture.Type.Texture2D);
         debugTexture.SetFilter(BBG.Sampler.MinFilter.Nearest, BBG.Sampler.MagFilter.Nearest);
         debugTexture.Allocate(Result.Width, Result.Height, 1, BBG.Texture.InternalFormat.R32Float);
+
+        for (int i = 0; i < temporalHistory.Length; i++)
+        {
+            temporalHistory[i]?.Dispose();
+            temporalHistory[i] = new BBG.Texture(BBG.Texture.Type.Texture2D);
+            temporalHistory[i].SetFilter(BBG.Sampler.MinFilter.Nearest, BBG.Sampler.MagFilter.Nearest);
+            temporalHistory[i].Allocate(Result.Width, Result.Height, 1, BBG.Texture.InternalFormat.R32UInt);
+            temporalHistory[i].Fill(0u);
+        }
+        temporalHistoryReadIndex = 0;
     }
 
     public BBG.Rendering.VariableRateShadingNV GetRenderData()
@@ -136,6 +154,8 @@ class LightingShadingRateClassifier : IDisposable
     {
         Result.Dispose();
         debugTexture.Dispose();
+        temporalHistory[0].Dispose();
+        temporalHistory[1].Dispose();
         shaderProgram.Dispose();
         debugProgram.Dispose();
     }
