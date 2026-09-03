@@ -221,6 +221,8 @@ class RasterPipeline : IDisposable
     private GpuBindlessGBuffer gpuBindlessGBuffer;
 
     private int frameIndex;
+    private Matrix4 previousVrsCameraMatrix;
+    private bool hasPreviousVrsCameraMatrix;
 
     public RasterPipeline(Vector2i renderSize, Vector2i presentationSize)
     {
@@ -296,6 +298,11 @@ class RasterPipeline : IDisposable
 
     public void Render(ModelManager modelManager, LightManager lightManager, Camera camera, float dT, Vector2 mousePos, Vector2 windowSize, bool isScopeMode)
     {
+        Matrix4 currentVrsCameraMatrix = camera.GetViewMatrix() * camera.GetProjectionMatrix();
+        bool isCameraMoving = hasPreviousVrsCameraMatrix && currentVrsCameraMatrix != previousVrsCameraMatrix;
+        previousVrsCameraMatrix = currentVrsCameraMatrix;
+        hasPreviousVrsCameraMatrix = true;
+
         // Update Temporal AntiAliasing stuff
         {
             gpuTaaData.MipmapBias = 0.0f;
@@ -640,7 +647,10 @@ class RasterPipeline : IDisposable
             mySettings.IsFoveated = isScopeMode ? 2 : (IsFoveated ? 1 : 0);
 
             LightingVRS.Settings = mySettings;
-            LightingVRS.Compute(beforeTAATexture, FrequencyVRS.Result);
+            // Temporal history is screen-space. While the camera moves it no
+            // longer refers to the same scene content, so use the current rate
+            // immediately and refresh history instead of holding stale tiles.
+            LightingVRS.Compute(beforeTAATexture, FrequencyVRS.Result, isCameraMoving);
         }
         
         if (IsMotionBlur)
