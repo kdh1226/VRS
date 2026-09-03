@@ -8,6 +8,7 @@ layout(local_size_x = TILE_SIZE, local_size_y = TILE_SIZE, local_size_z = 1) in;
 
 layout(binding = 0) restrict writeonly uniform uimage2D ImgResult;
 layout(binding = 1) restrict writeonly uniform image2D ImgDebug;
+layout(binding = 2, r32ui) restrict writeonly uniform uimage2D ImgTemporalHistory;
 layout(binding = 0) uniform sampler2D SamplerShaded;
 
 layout(std140, binding = 0) uniform SettingsUBO
@@ -20,6 +21,9 @@ layout(std140, binding = 0) uniform SettingsUBO
     int IsFoveated;
     int VrsMode;
     int IsMotionBlurVRS;
+    int IsTemporalStabilization;
+    int TemporalStableFrames;
+    int TemporalHoldFrames;
 
     // Motion-adaptive VRS thresholds
     float MotionThresholdLow;
@@ -27,6 +31,7 @@ layout(std140, binding = 0) uniform SettingsUBO
 } settingsUBO;
 
 layout(binding = 2) uniform usampler2D SamplerFrequencyMap;
+layout(binding = 3) uniform usampler2D SamplerTemporalHistory;
 
 const int ENUM_VRS_MODE_ORIGINAL = 0;
 const int ENUM_VRS_MODE_FREQUENCY_MAP = 1;
@@ -35,6 +40,67 @@ const int ENUM_VRS_MODE_DISTANCE = 2;
 uint GetFrequencyRate(uint frequencyRate);
 uint GetDistanceRate(float linearDepth);
 uint GetMotionAdaptiveRate(float meanSpeed);
+uint ApplyTemporalStabilization(uint candidateRate);
+
+uint ApplyTemporalStabilization(uint candidateRate)
+{
+    ivec2 tile = ivec2(gl_WorkGroupID.xy);
+    uint previousState = texelFetch(SamplerTemporalHistory, tile, 0).r;
+    bool hasHistory = (previousState & 0x80000000u) != 0u;
+
+    uint appliedRate = previousState & 7u;
+    uint pendingRate = (previousState >> 3u) & 7u;
+    uint stableCount = (previousState >> 6u) & 255u;
+    uint holdCount = (previousState >> 14u) & 255u;
+
+    if (!hasHistory || settingsUBO.IsTemporalStabilization == 0)
+    {
+        appliedRate = candidateRate;
+        pendingRate = candidateRate;
+        stableCount = 0u;
+        holdCount = 0u;
+    }
+    else if (holdCount > 0u)
+    {
+        holdCount--;
+        pendingRate = candidateRate;
+        stableCount = 0u;
+    }
+    else if (candidateRate == appliedRate)
+    {
+        pendingRate = candidateRate;
+        stableCount = 0u;
+    }
+    else
+    {
+        if (candidateRate != pendingRate)
+        {
+            pendingRate = candidateRate;
+            stableCount = 1u;
+        }
+        else
+        {
+            stableCount = min(stableCount + 1u, 255u);
+        }
+
+        uint requiredFrames = uint(max(settingsUBO.TemporalStableFrames, 1));
+        if (stableCount >= requiredFrames)
+        {
+            appliedRate = candidateRate;
+            pendingRate = candidateRate;
+            stableCount = 0u;
+            holdCount = uint(max(settingsUBO.TemporalHoldFrames, 0));
+        }
+    }
+
+    uint newState = 0x80000000u |
+        (appliedRate & 7u) |
+        ((pendingRate & 7u) << 3u) |
+        ((stableCount & 255u) << 6u) |
+        ((holdCount & 255u) << 14u);
+    imageStore(ImgTemporalHistory, tile, uvec4(newState));
+    return appliedRate;
+}
 uint GetFrequencyRate(uint frequencyRate)
 {
     if (frequencyRate == 0u) return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
@@ -127,14 +193,14 @@ void main()
             finalRateValue = GetDistanceRate(linearDepth);
         }
 
-        // ¸ð¼Çºí·¯ VRS´Â ¸ðµç ¸ðµå ÀÌÈÄ¿¡ Àû¿ë
+        // ëª¨ì…˜ë¸”ëŸ¬ VRSëŠ” ëª¨ë“  ëª¨ë“œ ì´í›„ì— ì ìš©
         if (settingsUBO.IsMotionBlurVRS == 1)
         {
-            // meanSpeed´Â DeltaRenderTimeÀ¸·Î º¸Á¤µÈ tile Æò±Õ motion Å©±â
+            // meanSpeedëŠ” DeltaRenderTimeìœ¼ë¡œ ë³´ì •ëœ tile í‰ê·  motion í¬ê¸°
             uint motionRate = GetMotionAdaptiveRate(meanSpeed);
 
-            // motion ±â¹Ý rate¿Í ±âÁ¸ VRS rate Áß ´õ ³·Àº Ç°Áú ÂÊÀ» ¼±ÅÃÇÑ´Ù
-            // °ªÀÌ Å¬¼ö·Ï ´õ coarseÇÑ shading rate´Ù
+            // motion ê¸°ë°˜ rateì™€ ê¸°ì¡´ VRS rate ì¤‘ ë” ë‚®ì€ í’ˆì§ˆ ìª½ì„ ì„ íƒí•œë‹¤
+            // ê°’ì´ í´ìˆ˜ë¡ ë” coarseí•œ shading rateë‹¤
             finalRateValue = max(finalRateValue, motionRate);            
         }
 
@@ -169,6 +235,7 @@ void main()
                 finalRateValue = min(finalRateValue, ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV);
             }
         }
+        finalRateValue = ApplyTemporalStabilization(finalRateValue);
         imageStore(ImgResult, ivec2(gl_WorkGroupID.xy), uvec4(finalRateValue));
 
         if (settingsUBO.DebugMode == ENUM_DEBUG_MODE_SPEED)
