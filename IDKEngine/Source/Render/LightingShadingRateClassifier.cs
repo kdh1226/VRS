@@ -54,6 +54,9 @@ class LightingShadingRateClassifier : IDisposable
     private BBG.Texture debugTexture;
     private readonly BBG.Texture[] temporalHistory = new BBG.Texture[2];
     private int temporalHistoryReadIndex;
+    private byte[] rateReadback = Array.Empty<byte>();
+    private float rateStatisticsElapsed;
+    public readonly float[] RatePercentages = new float[5];
     private readonly BBG.AbstractShaderProgram shaderProgram;
     private readonly BBG.AbstractShaderProgram debugProgram;
     public LightingShadingRateClassifier(Vector2i size, in GpuSettings settings)
@@ -144,6 +147,8 @@ class LightingShadingRateClassifier : IDisposable
             temporalHistory[i].Fill(0u);
         }
         temporalHistoryReadIndex = 0;
+        rateReadback = new byte[Result.Width * Result.Height];
+        rateStatisticsElapsed = 0.0f;
     }
 
     public BBG.Rendering.VariableRateShadingNV GetRenderData()
@@ -153,6 +158,41 @@ class LightingShadingRateClassifier : IDisposable
             ShadingRateImage = Result,
             ShadingRatePalette = ShadingRatePalette,
         };
+    }
+
+    public unsafe void UpdateRateStatistics(float deltaTime)
+    {
+        rateStatisticsElapsed += deltaTime;
+        if (rateStatisticsElapsed < 0.5f || rateReadback.Length == 0)
+        {
+            return;
+        }
+        rateStatisticsElapsed = 0.0f;
+
+        Array.Clear(RatePercentages);
+        fixed (byte* data = rateReadback)
+        {
+            Result.Download(
+                BBG.Texture.PixelFormat.RInteger,
+                BBG.Texture.PixelType.UByte,
+                data,
+                rateReadback.Length);
+        }
+
+        for (int i = 0; i < rateReadback.Length; i++)
+        {
+            byte rate = rateReadback[i];
+            if (rate < RatePercentages.Length)
+            {
+                RatePercentages[rate] += 1.0f;
+            }
+        }
+
+        float percentageScale = 100.0f / rateReadback.Length;
+        for (int i = 0; i < RatePercentages.Length; i++)
+        {
+            RatePercentages[i] *= percentageScale;
+        }
     }
 
     public void Dispose()
