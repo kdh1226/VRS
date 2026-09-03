@@ -193,14 +193,13 @@ void main()
             finalRateValue = GetDistanceRate(linearDepth);
         }
 
-        // 모션블러 VRS는 모든 모드 이후에 적용
+        // Apply motion-blur VRS after the selected base VRS mode.
         if (settingsUBO.IsMotionBlurVRS == 1)
         {
-            // meanSpeed는 DeltaRenderTime으로 보정된 tile 평균 motion 크기
+            // meanSpeed is the tile-average motion adjusted by DeltaRenderTime.
             uint motionRate = GetMotionAdaptiveRate(meanSpeed);
 
-            // motion 기반 rate와 기존 VRS rate 중 더 낮은 품질 쪽을 선택한다
-            // 값이 클수록 더 coarse한 shading rate다
+            // Select the coarser rate; larger values represent coarser shading.
             finalRateValue = max(finalRateValue, motionRate);            
         }
 
