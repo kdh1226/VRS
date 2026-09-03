@@ -73,7 +73,7 @@ partial class Gui : IDisposable
     {
         guiBackend.BeginFrame(app, dT);
 
-        DrawMyGui(app);
+        DrawMyGui(app, dT);
 
         guiBackend.EndFrame();
         while (frameDeletionQueue.TryDequeue(out IDisposable disposable))
@@ -82,7 +82,7 @@ partial class Gui : IDisposable
         }
     }
 
-    private unsafe void DrawMyGui(Application app)
+    private unsafe void DrawMyGui(Application app, float dT)
     {
         int tempInt;
         bool tempBool;
@@ -1563,6 +1563,49 @@ partial class Gui : IDisposable
             viewportHeaderSize = ImGui.GetWindowPos() + tileBar;
 
             ImGui.Image(app.TonemapAndGamma.Result.ID, content.ToNumerics(), new SysVec2(0.0f, 1.0f), new SysVec2(1.0f, 0.0f));
+
+            if (app.RasterizerPipeline.IsVariableRateShading &&
+                app.RasterizerPipeline.LightingVRS.Settings.DebugValue == LightingShadingRateClassifier.DebugMode.ShadingRate)
+            {
+                LightingShadingRateClassifier classifier = app.RasterizerPipeline.LightingVRS;
+                classifier.UpdateRateStatistics(dT);
+
+                ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+                SysVec2 imageMin = ImGui.GetItemRectMin();
+                SysVec2 imageMax = ImGui.GetItemRectMax();
+                float panelWidth = 150.0f;
+                float panelHeight = 112.0f;
+                SysVec2 panelMin = new SysVec2(imageMax.X - panelWidth - 10.0f, imageMin.Y + 10.0f);
+                SysVec2 panelMax = panelMin + new SysVec2(panelWidth, panelHeight);
+                drawList.AddRectFilled(
+                    panelMin,
+                    panelMax,
+                    ImGui.GetColorU32(new System.Numerics.Vector4(0.0f, 0.0f, 0.0f, 0.78f)),
+                    5.0f);
+
+                string[] labels = ["1x1", "2x1", "2x2", "4x2", "4x4"];
+                System.Numerics.Vector4[] colors =
+                [
+                    new(1.0f, 1.0f, 1.0f, 1.0f),
+                    new(0.15f, 0.35f, 1.0f, 1.0f),
+                    new(0.15f, 1.0f, 0.15f, 1.0f),
+                    new(1.0f, 1.0f, 0.15f, 1.0f),
+                    new(1.0f, 0.15f, 0.15f, 1.0f),
+                ];
+
+                drawList.AddText(
+                    panelMin + new SysVec2(10.0f, 7.0f),
+                    ImGui.GetColorU32(new System.Numerics.Vector4(1.0f)),
+                    "VRS tile ratios");
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    string line = $"{labels[i],3}  {classifier.RatePercentages[i],6:F1}%";
+                    drawList.AddText(
+                        panelMin + new SysVec2(10.0f, 26.0f + i * 16.0f),
+                        ImGui.GetColorU32(colors[i]),
+                        line);
+                }
+            }
 
             // 스코프 텍스처 덮어씌우기
             if (app.IsScopeMode && scopeTexture != null)
