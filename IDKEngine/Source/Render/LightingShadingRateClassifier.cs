@@ -74,11 +74,16 @@ class LightingShadingRateClassifier : IDisposable
         Settings = settings;
     }
 
-    public void Compute(BBG.Texture shaded, BBG.Texture frequencyMap = null)
+    public void Compute(BBG.Texture shaded, BBG.Texture frequencyMap = null, bool bypassTemporal = false)
     {
         BBG.Computing.Compute("Generate Shading Rate Image", () =>
         {
-            BBG.Cmd.SetUniforms(Settings);
+            GpuSettings frameSettings = Settings;
+            if (bypassTemporal)
+            {
+                frameSettings.IsTemporalStabilization = 0;
+            }
+            BBG.Cmd.SetUniforms(frameSettings);
 
             BBG.Cmd.BindImageUnit(Result, 0);
             BBG.Cmd.BindImageUnit(debugTexture, 1);
