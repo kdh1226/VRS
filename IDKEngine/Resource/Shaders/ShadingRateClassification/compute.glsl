@@ -151,7 +151,6 @@ void main()
     if (gl_LocalInvocationIndex == 0)
     {
         float meanSpeed = speedSum / SAMPLES_PER_TILE;
-        meanSpeed /= perFrameDataUBO.DeltaRenderTime;
 
         float luminanceMean = luminanceSum / SAMPLES_PER_TILE;
         float luminanceSquaredMean = luminanceSquaredSum / SAMPLES_PER_TILE;
