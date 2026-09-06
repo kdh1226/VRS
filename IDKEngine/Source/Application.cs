@@ -134,7 +134,9 @@ class Application : GameWindowBase
     private bool hasAutoScreenshot15 = false;
     private float sequenceFpsElapsed = 0.0f;
     private int sequenceFpsFrames = 0;
-    
+    public bool IsFramerateAwareVRS = false;
+    public bool IsAutoScreenshot = false;
+
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
     {
         (0.0f,  new Vector3(-13.5f, 6.5f, -0.5f),  0.0f, 120.0f),
@@ -358,22 +360,25 @@ class Application : GameWindowBase
             }
         }
 
-        // Framerate-aware VRS
-        float currentFPS = 1.0f / dT;
-        float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-        if (currentFPS < TargetFPS - 5.0f)
+        if (IsFramerateAwareVRS)
         {
-            currentLumVariance += lumVarianceAdjustSpeed;
-            currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            // Framerate-aware VRS
+            float currentFPS = 1.0f / dT;
+            float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+            if (currentFPS < TargetFPS - 5.0f)
+            {
+                currentLumVariance += lumVarianceAdjustSpeed;
+                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            }
+            else if (currentFPS > TargetFPS + 5.0f)
+            {
+                currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
+                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
+            }
+            var settings = RasterizerPipeline.LightingVRS.Settings;
+            settings.LumVarianceFactor = currentLumVariance;
+            RasterizerPipeline.LightingVRS.Settings = settings;
         }
-        else if (currentFPS > TargetFPS + 5.0f)
-        {
-            currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
-            currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
-        }
-        var settings = RasterizerPipeline.LightingVRS.Settings;
-        settings.LumVarianceFactor = currentLumVariance;
-        RasterizerPipeline.LightingVRS.Settings = settings;
 
         if (fpsTimer.ElapsedMilliseconds >= 1000)
         {
@@ -554,8 +559,7 @@ class Application : GameWindowBase
             if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
                 sequenceTimer += dT;
-
-                if (IsSequenceMode)
+                if (IsAutoScreenshot)
                 {
                     if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
                     {
