@@ -797,40 +797,13 @@ partial class Gui : IDisposable
 
                     ImGui.SliderFloat("SpeedFactor", ref app.RasterizerPipeline.LightingVRS.Settings.SpeedFactor, 0.0f, 1.0f);
                     ImGui.SliderFloat("LumVarianceFactor", ref app.RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor, 0.0f, 0.3f);
-<<<<<<< HEAD
-                    ImGui.SliderFloat("Target FPS", ref app.TargetFPS, 30.0f, 165.0f);
-                    ImGui.SliderFloat("MotionThresholdLow",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow,0.0f,0.05f);
-                    ImGui.SliderFloat("MotionThresholdHigh",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh,0.0f,0.1f);
-
-                    var temporalSettings = app.RasterizerPipeline.LightingVRS.Settings;
-                    bool temporalStabilization = temporalSettings.IsTemporalStabilization == 1;
-                    if (ImGui.Checkbox("Temporal VRS stabilization", ref temporalStabilization))
-                    {
-                        temporalSettings.IsTemporalStabilization = temporalStabilization ? 1 : 0;
-                        app.RasterizerPipeline.LightingVRS.Settings = temporalSettings;
-                    }
-                    if (temporalStabilization)
-                    {
-                        ImGui.SliderInt(
-                            "Rate confirmation frames",
-                            ref app.RasterizerPipeline.LightingVRS.Settings.TemporalStableFrames,
-                            2,
-                            8);
-                        ImGui.SliderInt(
-                            "Minimum rate hold frames",
-                            ref app.RasterizerPipeline.LightingVRS.Settings.TemporalHoldFrames,
-                            0,
-                            12);
-                    }
-=======
                     ImGui.Checkbox("Enable Framerate-aware VRS", ref app.IsFramerateAwareVRS);
                     if (app.IsFramerateAwareVRS)
                     {
                         ImGui.SliderFloat("Target FPS", ref app.TargetFPS, 30.0f, 165.0f);
                     }
-                    ImGui.SliderFloat("MotionThresholdLow",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow,0.0f,0.05f);
-                    ImGui.SliderFloat("MotionThresholdHigh",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh,0.0f,0.1f);
->>>>>>> 9060795 (Add auto screenshot and framerate-aware VRS toggle for main)
+                    ImGui.SliderFloat("MotionThresholdLow", ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow, 0.0f, 0.05f);
+                    ImGui.SliderFloat("MotionThresholdHigh", ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh, 0.0f, 0.1f);
                 }
 
                 if (ImGui.CollapsingHeader("SSAO"))
