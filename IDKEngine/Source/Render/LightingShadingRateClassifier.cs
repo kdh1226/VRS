@@ -40,8 +40,8 @@ class LightingShadingRateClassifier : IDisposable
         public int TemporalHoldFrames = 4;
 
         // Motion-adaptive VRS threshold
-        public float MotionThresholdLow = 0.05f;
-        public float MotionThresholdHigh = 0.1f;
+        public float MotionThresholdLow = 0.001f;
+        public float MotionThresholdHigh = 0.0015f;
         public GpuSettings()
         {
         }
