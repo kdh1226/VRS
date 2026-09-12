@@ -35,6 +35,9 @@ class LightingShadingRateClassifier : IDisposable
 
         public int VrsMode;
         public int IsMotionBlurVRS = 0;
+        public int IsTemporalStabilization = 1;
+        public int TemporalStableFrames = 3;
+        public int TemporalHoldFrames = 4;
 
         // Motion-adaptive VRS threshold
         public float MotionThresholdLow = 0.001f;
@@ -49,6 +52,11 @@ class LightingShadingRateClassifier : IDisposable
 
     public BBG.Texture Result;
     private BBG.Texture debugTexture;
+    private readonly BBG.Texture[] temporalHistory = new BBG.Texture[2];
+    private int temporalHistoryReadIndex;
+    private byte[] rateReadback = Array.Empty<byte>();
+    private float rateStatisticsElapsed;
+    public readonly float[] RatePercentages = new float[5];
     private readonly BBG.AbstractShaderProgram shaderProgram;
     private readonly BBG.AbstractShaderProgram debugProgram;
     public LightingShadingRateClassifier(Vector2i size, in GpuSettings settings)
@@ -69,20 +77,28 @@ class LightingShadingRateClassifier : IDisposable
         Settings = settings;
     }
 
-    public void Compute(BBG.Texture shaded, BBG.Texture frequencyMap = null)
+    public void Compute(BBG.Texture shaded, BBG.Texture frequencyMap = null, bool bypassTemporal = false)
     {
         BBG.Computing.Compute("Generate Shading Rate Image", () =>
         {
-            BBG.Cmd.SetUniforms(Settings);
+            GpuSettings frameSettings = Settings;
+            if (bypassTemporal)
+            {
+                frameSettings.IsTemporalStabilization = 0;
+            }
+            BBG.Cmd.SetUniforms(frameSettings);
 
             BBG.Cmd.BindImageUnit(Result, 0);
             BBG.Cmd.BindImageUnit(debugTexture, 1);
+            BBG.Cmd.BindImageUnit(temporalHistory[1 - temporalHistoryReadIndex], 2);
             BBG.Cmd.BindTextureUnit(shaded, 0);
             BBG.Cmd.BindTextureUnit(frequencyMap ?? Result, 2);
+            BBG.Cmd.BindTextureUnit(temporalHistory[temporalHistoryReadIndex], 3);
             BBG.Cmd.UseShaderProgram(shaderProgram);
 
             BBG.Computing.Dispatch(MyMath.DivUp(shaded.Width, TILE_SIZE), MyMath.DivUp(shaded.Height, TILE_SIZE), 1);
             BBG.Cmd.MemoryBarrier(BBG.Cmd.MemoryBarrierMask.TextureFetchBarrierBit);
+            temporalHistoryReadIndex = 1 - temporalHistoryReadIndex;
         });
     }
 
@@ -121,6 +137,18 @@ class LightingShadingRateClassifier : IDisposable
         debugTexture = new BBG.Texture(BBG.Texture.Type.Texture2D);
         debugTexture.SetFilter(BBG.Sampler.MinFilter.Nearest, BBG.Sampler.MagFilter.Nearest);
         debugTexture.Allocate(Result.Width, Result.Height, 1, BBG.Texture.InternalFormat.R32Float);
+
+        for (int i = 0; i < temporalHistory.Length; i++)
+        {
+            temporalHistory[i]?.Dispose();
+            temporalHistory[i] = new BBG.Texture(BBG.Texture.Type.Texture2D);
+            temporalHistory[i].SetFilter(BBG.Sampler.MinFilter.Nearest, BBG.Sampler.MagFilter.Nearest);
+            temporalHistory[i].Allocate(Result.Width, Result.Height, 1, BBG.Texture.InternalFormat.R32UInt);
+            temporalHistory[i].Fill(0u);
+        }
+        temporalHistoryReadIndex = 0;
+        rateReadback = new byte[Result.Width * Result.Height];
+        rateStatisticsElapsed = 0.0f;
     }
 
     public BBG.Rendering.VariableRateShadingNV GetRenderData()
@@ -132,10 +160,47 @@ class LightingShadingRateClassifier : IDisposable
         };
     }
 
+    public unsafe void UpdateRateStatistics(float deltaTime)
+    {
+        rateStatisticsElapsed += deltaTime;
+        if (rateStatisticsElapsed < 0.5f || rateReadback.Length == 0)
+        {
+            return;
+        }
+        rateStatisticsElapsed = 0.0f;
+
+        Array.Clear(RatePercentages);
+        fixed (byte* data = rateReadback)
+        {
+            Result.Download(
+                BBG.Texture.PixelFormat.RInteger,
+                BBG.Texture.PixelType.UByte,
+                data,
+                rateReadback.Length);
+        }
+
+        for (int i = 0; i < rateReadback.Length; i++)
+        {
+            byte rate = rateReadback[i];
+            if (rate < RatePercentages.Length)
+            {
+                RatePercentages[rate] += 1.0f;
+            }
+        }
+
+        float percentageScale = 100.0f / rateReadback.Length;
+        for (int i = 0; i < RatePercentages.Length; i++)
+        {
+            RatePercentages[i] *= percentageScale;
+        }
+    }
+
     public void Dispose()
     {
         Result.Dispose();
         debugTexture.Dispose();
+        temporalHistory[0].Dispose();
+        temporalHistory[1].Dispose();
         shaderProgram.Dispose();
         debugProgram.Dispose();
     }

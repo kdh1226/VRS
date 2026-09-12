@@ -221,6 +221,8 @@ class RasterPipeline : IDisposable
     private GpuBindlessGBuffer gpuBindlessGBuffer;
 
     private int frameIndex;
+    private Matrix4 previousVrsCameraMatrix;
+    private bool hasPreviousVrsCameraMatrix;
 
     public RasterPipeline(Vector2i renderSize, Vector2i presentationSize)
     {
@@ -269,7 +271,7 @@ class RasterPipeline : IDisposable
         IsWireframe = false;
         IsSSAO = true;
         IsSSR = false;
-        IsMotionBlur = true;
+        IsMotionBlur = false;
         IsVariableRateShading = false;
         IsVXGI = false;
         GenerateShadowMaps = true;
@@ -284,8 +286,23 @@ class RasterPipeline : IDisposable
         AntiAliasingMode_ = AntiAliasingMode.TAA;
     }
 
+    private BBG.Rendering.VariableRateShadingNV GetActiveVrsRenderData()
+    {
+        if (VariableRateShadingMode == VrsMode.FrequencyMap)
+        {
+            return FrequencyVRS.GetRenderData();
+        }
+
+        return LightingVRS.GetRenderData();
+    }
+
     public void Render(ModelManager modelManager, LightManager lightManager, Camera camera, float dT, Vector2 mousePos, Vector2 windowSize, bool isScopeMode)
     {
+        Matrix4 currentVrsCameraMatrix = camera.GetViewMatrix() * camera.GetProjectionMatrix();
+        bool isCameraMoving = hasPreviousVrsCameraMatrix && currentVrsCameraMatrix != previousVrsCameraMatrix;
+        previousVrsCameraMatrix = currentVrsCameraMatrix;
+        hasPreviousVrsCameraMatrix = true;
+
         // Update Temporal AntiAliasing stuff
         {
             gpuTaaData.MipmapBias = 0.0f;
@@ -310,7 +327,9 @@ class RasterPipeline : IDisposable
                 Vector2 jitter = MyMath.GetHalton2D(frameIndex++ % gpuTaaData.SampleCount, 2, 3);
                 jitter = jitter * 2.0f - 1.0f;
 
-                gpuTaaData.Jitter = jitter / RenderResolution;
+                // VRS 사용 중에는 jitter 크기를 줄여 temporal artifact를 완화
+                float jitterScale = IsVariableRateShading ? 0.25f : 1.0f;
+                gpuTaaData.Jitter = jitter * jitterScale / RenderResolution;
             }
 
             if (!TAAEnableMipBias)
@@ -440,6 +459,11 @@ class RasterPipeline : IDisposable
             BBG.Cmd.Flush();
         }
 
+        if (IsVariableRateShading && VariableRateShadingMode == VrsMode.FrequencyMap)
+        {
+            FrequencyVRS.Compute(NormalTexture, FrequencyEdgeThreshold, FrequencyHighRateRatio, FrequencyMedRateRatio);
+        }
+
         if (ShadowMode_ == ShadowMode.RayTraced)
         {
             lightManager.ComputeRayTracedShadows(RayTracingSamples);
@@ -465,7 +489,7 @@ class RasterPipeline : IDisposable
         }, new BBG.Rendering.GraphicsPipelineState()
         {
             EnabledCapabilities = [BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)],
-            VariableRateShading = LightingVRS.GetRenderData(),
+            VariableRateShading = GetActiveVrsRenderData(),
         }, () =>
         {
             deferredLightingProgram.Upload("ShadowMode", (uint)ShadowMode_);
@@ -498,7 +522,7 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.Capability.CullFace,
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
-            VariableRateShading = LightingVRS.GetRenderData(),
+            VariableRateShading = GetActiveVrsRenderData(),
         }, () =>
         {
             BBG.Rendering.InferViewportSize();
@@ -525,7 +549,7 @@ class RasterPipeline : IDisposable
                 BBG.Rendering.CapIf(IsVariableRateShading, BBG.Rendering.Capability.VariableRateShadingNV)
             ],
             DepthFunction = BBG.Rendering.DepthFunction.Lequal,
-            VariableRateShading = LightingVRS.GetRenderData(),
+            VariableRateShading = GetActiveVrsRenderData(),
         }, () =>
         {
             BBG.Cmd.UseShaderProgram(skyBoxProgram);
@@ -565,7 +589,7 @@ class RasterPipeline : IDisposable
                 ],
                 EnableDepthWrites = false,
                 FillMode = IsWireframe ? BBG.Rendering.FillMode.Line : BBG.Rendering.FillMode.Fill,
-                VariableRateShading = LightingVRS.GetRenderData(),
+                VariableRateShading = GetActiveVrsRenderData(),
             },
             () =>
             {
@@ -606,10 +630,10 @@ class RasterPipeline : IDisposable
 
         if (IsVariableRateShading || LightingVRS.Settings.DebugValue != LightingShadingRateClassifier.DebugMode.None)
         {
-            if (VariableRateShadingMode == VrsMode.FrequencyMap)
-            {
-                FrequencyVRS.Compute(NormalTexture, FrequencyEdgeThreshold, FrequencyHighRateRatio, FrequencyMedRateRatio);
-            }
+            //if (VariableRateShadingMode == VrsMode.FrequencyMap)
+            //{
+                //FrequencyVRS.Compute(NormalTexture, FrequencyEdgeThreshold, FrequencyHighRateRatio, FrequencyMedRateRatio);
+            //}
 
             var mySettings = LightingVRS.Settings;
             mySettings.VrsMode = (int)VariableRateShadingMode;
@@ -623,7 +647,10 @@ class RasterPipeline : IDisposable
             mySettings.IsFoveated = isScopeMode ? 2 : (IsFoveated ? 1 : 0);
 
             LightingVRS.Settings = mySettings;
-            LightingVRS.Compute(beforeTAATexture, FrequencyVRS.Result);
+            // Temporal history is screen-space. While the camera moves it no
+            // longer refers to the same scene content, so use the current rate
+            // immediately and refresh history instead of holding stale tiles.
+            LightingVRS.Compute(beforeTAATexture, FrequencyVRS.Result, isCameraMoving);
         }
         
         if (IsMotionBlur)

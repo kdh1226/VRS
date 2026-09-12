@@ -134,21 +134,23 @@ class Application : GameWindowBase
     private float lumVarianceMin = 0.01f;
     private float lumVarianceMax = 0.3f;
     private float lumVarianceAdjustSpeed = 0.005f;
+    public bool IsFramerateAwareVRS = false;
+    public bool IsAutoScreenshot = false;
 
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
     {
-        ( 0.0f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f),
-        ( 1.0f, new Vector3(-10.0f, 0.0f, 0.0f),  30.0f,  90.0f),
-        ( 2.0f, new Vector3(  5.0f, 0.0f, 0.0f), -30.0f,  90.0f),
-        ( 3.0f, new Vector3( 20.0f, 0.0f, 0.0f),   0.0f,  90.0f),
-        ( 4.0f, new Vector3( 45.0f, 0.0f, 0.0f),   0.0f,  65.0f),
-        ( 5.0f, new Vector3( 60.0f, 0.0f, 0.0f),   0.0f, 120.0f),
-        ( 6.0f, new Vector3( 85.0f, 0.0f, 0.0f),   0.0f,  90.0f),
-        ( 7.0f, new Vector3( 85.0f, 0.0f, 0.0f), 180.0f,  90.0f),
-        ( 8.0f, new Vector3( 60.0f, 0.0f, 0.0f), 120.0f,  90.0f),
-        ( 9.0f, new Vector3( 45.0f, 0.0f, 0.0f), 180.0f,  90.0f),
-        (10.0f, new Vector3( 20.0f, 0.0f, 0.0f), 180.0f, 120.0f),
-        (11.0f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f)
+        ( 0.000f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 1.818f, new Vector3(-10.0f, 0.0f, 0.0f),  30.0f,  90.0f),
+        ( 3.636f, new Vector3(  5.0f, 0.0f, 0.0f), -30.0f,  90.0f),
+        ( 5.455f, new Vector3( 20.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 7.273f, new Vector3( 45.0f, 0.0f, 0.0f),   0.0f,  65.0f),
+        ( 9.091f, new Vector3( 60.0f, 0.0f, 0.0f),   0.0f, 120.0f),
+        (10.909f, new Vector3( 85.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        (12.727f, new Vector3( 85.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        (14.545f, new Vector3( 60.0f, 0.0f, 0.0f), 120.0f,  90.0f),
+        (16.364f, new Vector3( 45.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        (18.182f, new Vector3( 20.0f, 0.0f, 0.0f), 180.0f, 120.0f),
+        (20.000f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f)
     };
 
     private GpuPerFrameData gpuPerFrameData;
@@ -362,25 +364,25 @@ class Application : GameWindowBase
             }
         }
 
-        // Framerate-aware VRS
-        float currentFPS = 1.0f / dT;
-        float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-        bool isSceneComplex = currentLumVariance < 0.15f;
-        if (currentFPS < TargetFPS - 5.0f)
+        if (IsFramerateAwareVRS)
         {
-            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
-            currentLumVariance += adjustSpeed;
-            currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            // Framerate-aware VRS
+            float currentFPS = 1.0f / dT;
+            float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+            if (currentFPS < TargetFPS - 5.0f)
+            {
+                currentLumVariance += lumVarianceAdjustSpeed;
+                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            }
+            else if (currentFPS > TargetFPS + 5.0f)
+            {
+                currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
+                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
+            }
+            var settings = RasterizerPipeline.LightingVRS.Settings;
+            settings.LumVarianceFactor = currentLumVariance;
+            RasterizerPipeline.LightingVRS.Settings = settings;
         }
-        else if (currentFPS > TargetFPS + 5.0f)
-        {
-            float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
-            currentLumVariance -= adjustSpeed;
-            currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
-        }
-        var settings = RasterizerPipeline.LightingVRS.Settings;
-        settings.LumVarianceFactor = currentLumVariance;
-        RasterizerPipeline.LightingVRS.Settings = settings;
 
         if (fpsTimer.ElapsedMilliseconds >= 1000)
         {
@@ -561,8 +563,7 @@ class Application : GameWindowBase
             if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
                 sequenceTimer += dT;
-
-                if (IsSequenceMode)
+                if (IsAutoScreenshot)
                 {
                     if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
                     {
