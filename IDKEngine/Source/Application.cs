@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ﻿using System;
 using System.IO;
 using System.Diagnostics;
@@ -1077,3 +1078,1063 @@ class Application : GameWindowBase
         }
     }
 }
+=======
+﻿using System;
+using System.IO;
+using System.Diagnostics;
+using OpenTK.Mathematics;
+using OpenTK.Windowing.GraphicsLibraryFramework;
+using BBLogger;
+using BBOpenGL;
+using IDKEngine.Utils;
+using IDKEngine.Shapes;
+using IDKEngine.Render;
+using IDKEngine.GpuTypes;
+using IDKEngine.Windowing;
+
+namespace IDKEngine;
+
+class Application : GameWindowBase
+{
+    public enum RenderMode : int
+    {
+        Rasterizer,
+        PathTracer
+    }
+
+    public enum FrameRecorderState : int
+    {
+        None,
+        Recording,
+        Replaying,
+    }
+
+    public record struct RecordingSettings
+    {
+        // To merge recorded frames into video:
+        // ffmpeg.exe -framerate 144 -thread_queue_size 4096 -start_number 1 -i '%d.jpg' -vcodec libx264 -crf 22 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" "../render.mp4"
+
+        public const string FRAME_RECORD_FILE_EXTENSION = ".frd";
+        public const string FRAMES_OUTPUT_FOLDER = "RecordedFrames";
+
+        public int FPSGoal = 30;
+        public int PathTracerSamples = 50;
+        public bool DoDenoising = false;
+        public bool IsOutputFrames = false;
+        public FrameRecorderState State = FrameRecorderState.None;
+        public Stopwatch FrameTimer = new Stopwatch();
+
+        public RecordingSettings()
+        {
+        }
+    }
+
+    public RenderMode RenderMode_
+    {
+        get
+        {
+            if (RasterizerPipeline != null)
+            {
+                return RenderMode.Rasterizer;
+            }
+            if (PathTracerPipeline != null)
+            {
+                return RenderMode.PathTracer;
+            }
+
+            throw new UnreachableException($"Rasterizer and PathTracer are both disposed. Select a {nameof(RenderMode)}");
+        }
+    }
+
+    public Vector2i PresentationResolution => new Vector2i(TonemapAndGamma.Result.Width, TonemapAndGamma.Result.Height);
+
+    public Vector2i RenderResolution
+    {
+        get
+        {
+            if (RenderMode_ == RenderMode.Rasterizer)
+            {
+                return RasterizerPipeline.RenderResolution;
+            }
+
+            if (RenderMode_ == RenderMode.PathTracer)
+            {
+                return PathTracerPipeline.RenderResolution;
+            }
+
+            throw new UnreachableException($"Unknown {nameof(RenderMode_)} = {RenderMode_}");
+        }
+    }
+
+    public float RenderResolutionScale => (float)RenderResolution.Y / PresentationResolution.Y;
+
+    public ref readonly GpuPerFrameData PerFrameData => ref gpuPerFrameData;
+
+    // Will take effect at the beginning of a frame
+    public Vector2i? RequestPresentationResolution;
+    public float? RequestRenderResolutionScale;
+    public RenderMode? RequestRenderMode;
+
+    // Used for Rasterizer and PathTracer RenderMode
+    // Only one is ever used while the other is disposed and set to null
+    public RasterPipeline? RasterizerPipeline;
+    public PathTracerPipeline? PathTracerPipeline;
+
+    // Run at presentation resolution and are useful for
+    // both Rasterizer and PathTracer RenderMode which is why they are here
+    public TonemapAndGammaCorrect TonemapAndGamma;
+    public BoxRenderer BoxRenderer;
+    public Bloom Bloom;
+    public VolumetricLighting VolumetricLight;
+    private Gui gui;
+    public bool IsBloom = true;
+    public bool IsVolumetricLighting = true;
+    public bool RenderImGui = true;
+
+    // All models and all lights and Camera (the types of different entities)
+    public ModelManager ModelManager;
+    public LightManager LightManager;
+    public Camera Camera;
+
+    public StateRecorder<FrameState> FrameStateRecorder;
+    public RecordingSettings RecorderVars = new RecordingSettings();
+
+    public int MeasuredFramesPerSecond { get; private set; }
+
+    public bool TimeEnabled;
+
+    public bool IsSequenceMode = false;
+    public float AverageFramesPerSecond { get; private set; }
+    private float sequenceTimer = 0.0f;
+    private bool hasAutoScreenshot5 = false;
+    private bool hasAutoScreenshot10 = false;
+    private bool hasAutoScreenshot15 = false;
+    private float sequenceFpsElapsed = 0.0f;
+    private int sequenceFpsFrames = 0;
+    public float TargetFPS = 60.0f;
+    private float lumVarianceMin = 0.01f;
+    private float lumVarianceMax = 0.3f;
+    private float lumVarianceAdjustSpeed = 0.005f;
+    public bool IsFramerateAwareVRS = false;
+    public bool IsAutoScreenshot = false;
+
+    private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
+    {
+        ( 0.000f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 1.818f, new Vector3(-10.0f, 0.0f, 0.0f),  30.0f,  90.0f),
+        ( 3.636f, new Vector3(  5.0f, 0.0f, 0.0f), -30.0f,  90.0f),
+        ( 5.455f, new Vector3( 20.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        ( 7.273f, new Vector3( 45.0f, 0.0f, 0.0f),   0.0f,  65.0f),
+        ( 9.091f, new Vector3( 60.0f, 0.0f, 0.0f),   0.0f, 120.0f),
+        (10.909f, new Vector3( 85.0f, 0.0f, 0.0f),   0.0f,  90.0f),
+        (12.727f, new Vector3( 85.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        (14.545f, new Vector3( 60.0f, 0.0f, 0.0f), 120.0f,  90.0f),
+        (16.364f, new Vector3( 45.0f, 0.0f, 0.0f), 180.0f,  90.0f),
+        (18.182f, new Vector3( 20.0f, 0.0f, 0.0f), 180.0f, 120.0f),
+        (20.000f, new Vector3(-25.0f, 0.0f, 0.0f),   0.0f,  90.0f)
+    };
+
+    private GpuPerFrameData gpuPerFrameData;
+    private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
+
+    private int fpsCounter;
+    private readonly Stopwatch fpsTimer = Stopwatch.StartNew();
+
+    private float animationTime;
+
+    private ModelLoader.Node? fanBladeNode;
+    private Transformation fanBladeBaseTransform;
+
+    private const float FanScale = 0.02f;
+    private const float FanBladeRpm = 3000.0f;
+    private const string FanModelFolder = "Resource/Models/Fan";
+
+    public Application(int width, int height, string title)
+        : base(width, height, title, 4, 6)
+    {
+    }
+    // 단계별 해상도
+    public int GraphicsLevel = 4;
+
+    public void SetGraphicsQuality(int level)
+    {
+        GraphicsLevel = level;
+        switch (level)
+        {
+            case 1: // Very Low
+                RequestRenderResolutionScale = 0.500f;
+                IsBloom = false;
+                IsVolumetricLighting = false;
+                break;
+            case 2: // Low
+                RequestRenderResolutionScale = 0.625f;
+                IsBloom = true;
+                IsVolumetricLighting = false;
+                break;
+            case 3: // Medium
+                RequestRenderResolutionScale = 0.750f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 4: // High - Default
+                RequestRenderResolutionScale = 0.875f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+            case 5: // Very High
+                RequestRenderResolutionScale = 1.000f;
+                IsBloom = true;
+                IsVolumetricLighting = true;
+                break;
+        }
+
+        // Display in console window (or log) that quality has changed
+        Console.WriteLine($"[System] Graphics Quality Changed to Level {level}");
+    }
+
+    public bool IsScopeMode = false;
+
+    protected override void OnRender(float dT)
+    {
+        MainThreadQueue.Execute();
+
+        HandleFrameRecorderLogic();
+
+        Camera.ProjectionSize = RenderResolution;
+        gpuPerFrameData.PrevView = gpuPerFrameData.View;
+        gpuPerFrameData.PrevProjView = gpuPerFrameData.ProjView;
+        gpuPerFrameData.Projection = Camera.GetProjectionMatrix();
+        gpuPerFrameData.InvProjection = Matrix4.Invert(gpuPerFrameData.Projection);
+        gpuPerFrameData.View = Camera.GetViewMatrix();
+        gpuPerFrameData.InvView = Matrix4.Invert(gpuPerFrameData.View);
+        gpuPerFrameData.ProjView = gpuPerFrameData.View * gpuPerFrameData.Projection;
+        gpuPerFrameData.InvProjView = Matrix4.Invert(gpuPerFrameData.ProjView);
+        gpuPerFrameData.CameraPos = Camera.Position;
+        gpuPerFrameData.NearPlane = Camera.NearPlane;
+        gpuPerFrameData.FarPlane = Camera.FarPlane;
+        gpuPerFrameData.DeltaRenderTime = dT;
+        gpuPerFrameData.Time = WindowTime;
+        gpuPerFrameData.Frame++;
+        gpuPerFrameDataBuffer.UploadElements(gpuPerFrameData);
+
+        LightManager.Update(out bool anyLightMoved);
+        UpdateFanBladeAnimation(animationTime);
+        ModelManager.Update(animationTime, out bool anyAnimatedNodeMoved, out bool anyMeshInstanceMoved);
+        //ModelManager.BVH.BlasesBuild(0, ModelManager.BVH.BlasesDesc.Length);
+
+        if (RequestPresentationResolution.HasValue || RequestRenderResolutionScale.HasValue)
+        {
+            float newResolutionScale = RequestRenderResolutionScale ?? RenderResolutionScale;
+            Vector2i newPresenRes = RequestPresentationResolution ?? PresentationResolution;
+            Vector2i newRenderRes = new Vector2i((int)(newPresenRes.X * newResolutionScale), (int)(newPresenRes.Y * newResolutionScale));
+            RequestPresentationResolution = null;
+            RequestRenderResolutionScale = null;
+
+            SetResolutions(newRenderRes, newPresenRes);
+        }
+
+        if (RequestRenderMode.HasValue)
+        {
+            SetRenderMode(RequestRenderMode.Value, RenderResolution, PresentationResolution);
+            RequestRenderMode = null;
+        }
+
+        if (RenderMode_ == RenderMode.Rasterizer)
+        {
+            //RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT);
+            RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT, MouseState.Position, new Vector2(WindowFramebufferSize.X, WindowFramebufferSize.Y), IsScopeMode);
+            if (RasterizerPipeline.IsConfigureGridMode)
+            {
+                TonemapAndGamma.Compute(RasterizerPipeline.Result);
+                BoxRenderer.Render(TonemapAndGamma.Result, gpuPerFrameData.ProjView, new Box(RasterizerPipeline.Voxelizer.GridMin, RasterizerPipeline.Voxelizer.GridMax));
+            }
+            else
+            {
+                if (IsBloom)
+                {
+                    Bloom.Compute(RasterizerPipeline.Result);
+                }
+
+                if (IsVolumetricLighting)
+                {
+                    VolumetricLight.Compute();
+                }
+
+                TonemapAndGamma.Compute(RasterizerPipeline.Result, IsBloom ? Bloom.Result : null, IsVolumetricLighting ? VolumetricLight.Result : null);
+                RasterizerPipeline.LightingVRS.DebugRender(TonemapAndGamma.Result);
+            }
+        }
+
+        if (RenderMode_ == RenderMode.PathTracer)
+        {
+            bool cameraMoved = gpuPerFrameData.PrevProjView != gpuPerFrameData.ProjView;
+            if (cameraMoved || anyAnimatedNodeMoved || anyMeshInstanceMoved || anyLightMoved)
+            {
+                PathTracerPipeline.ResetAccumulation();
+            }
+
+            PathTracerPipeline.Compute();
+
+            if (IsBloom)
+            {
+                Bloom.Compute(PathTracerPipeline.Result);
+            }
+
+            TonemapAndGamma.Settings.DoTonemapAndSrgbTransform = !PathTracerPipeline.DoDebugBVHTraversal;
+            TonemapAndGamma.Compute(PathTracerPipeline.Result, IsBloom ? Bloom.Result : null);
+        }
+
+        if (gui.SelectedEntity is Gui.SelectedEntityInfo.Mesh meshInfo)
+        {
+            ref readonly GpuMesh mesh = ref ModelManager.Meshes[meshInfo.MeshId];
+            ref readonly GpuMeshTransform meshTransform = ref ModelManager.MeshTransforms[meshInfo.MeshTransformId];
+
+            Box box = new Box(mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+            BoxRenderer.Render(TonemapAndGamma.Result, meshTransform.ModelMatrix * gpuPerFrameData.ProjView, box);
+        }
+        else if (gui.SelectedEntity is Gui.SelectedEntityInfo.Light lightInfo)
+        {
+            LightManager.TryGetLight(lightInfo.LightId, out CpuLight cpuLight);
+            ref GpuLight light = ref cpuLight.GpuLight;
+
+            Box box = new Box(light.Position - new Vector3(light.Radius), light.Position + new Vector3(light.Radius));
+            BoxRenderer.Render(TonemapAndGamma.Result, gpuPerFrameData.ProjView, box);
+        }
+        else if (gui.SelectedEntity is Gui.SelectedEntityInfo.Node nodeInfo)
+        {
+            ModelLoader.Node.Traverse(nodeInfo.Node_, (node) =>
+            {
+                if (node.HasMeshes)
+                {
+                    Range meshInstanceRange = ModelManager.GetMeshesInstanceRange(node.MeshRange);
+                    for (int i = meshInstanceRange.Start; i < meshInstanceRange.End; i++)
+                    {
+                        ref readonly GpuMeshInstance meshInstance = ref ModelManager.MeshInstances[i];
+
+                        ref readonly GpuMesh mesh = ref ModelManager.Meshes[meshInstance.MeshId];
+                        ref readonly GpuMeshTransform meshTransform = ref ModelManager.MeshTransforms[meshInstance.MeshTransformId];
+
+                        Box box = new Box(mesh.LocalBoundsMin, mesh.LocalBoundsMax);
+                        BoxRenderer.Render(TonemapAndGamma.Result, meshTransform.ModelMatrix * gpuPerFrameData.ProjView, box);
+                    }
+                }
+            });
+        }
+
+        BBG.Rendering.SetViewport(WindowFramebufferSize);
+        if (RenderImGui)
+        {
+            gui.Draw(this, dT);
+        }
+        else
+        {
+            BBG.Rendering.CopyTextureToSwapchain(TonemapAndGamma.Result);
+        }
+
+        SwapBuffers();
+        PollEvents();
+
+        fpsCounter++;
+        if (IsSequenceMode)
+        {
+            sequenceFpsFrames++;
+            sequenceFpsElapsed += dT;
+            if (sequenceFpsElapsed > 0.0f)
+            {
+                AverageFramesPerSecond = sequenceFpsFrames / sequenceFpsElapsed;
+            }
+        }
+
+        if (IsFramerateAwareVRS)
+        {
+            // Framerate-aware VRS
+            float currentFPS = 1.0f / dT;
+            float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
+            if (currentFPS < TargetFPS - 5.0f)
+            {
+                currentLumVariance += lumVarianceAdjustSpeed;
+                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
+            }
+            else if (currentFPS > TargetFPS + 5.0f)
+            {
+                currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
+                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
+            }
+            var settings = RasterizerPipeline.LightingVRS.Settings;
+            settings.LumVarianceFactor = currentLumVariance;
+            RasterizerPipeline.LightingVRS.Settings = settings;
+        }
+
+        if (fpsTimer.ElapsedMilliseconds >= 1000)
+        {
+            MeasuredFramesPerSecond = fpsCounter;
+            WindowTitle = $"IDKEngine FPS: {MeasuredFramesPerSecond} ({RenderResolution.X}x{RenderResolution.Y})";
+            fpsCounter = 0;
+            fpsTimer.Restart();
+
+            if (!Debugger.IsAttached)
+            {
+                // When loading a model like IntelSponza, SharpGLTF and possibly other code
+                // creates a lot of garbage and the GC doesn't return it to the OS even after waiting.
+                // I don't like that so let's force Collection every second when running standalone
+                GC.Collect();
+            }
+        }
+    }
+
+    protected override void OnUpdate(float dT)
+    {
+        gui.Update(this);
+
+        if (KeyboardState[Keys.Escape] == Keyboard.InputState.Pressed)
+        {
+            ShouldClose();
+        }
+
+        if (KeyboardState[Keys.F12] == Keyboard.InputState.Touched) //스크린샷
+        {
+            string folderPath = "Screenshots";
+            System.IO.Directory.CreateDirectory(folderPath);
+
+            string fileName = $"{folderPath}/Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+
+            Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+        }
+
+        if (KeyboardState[Keys.L] == Keyboard.InputState.Touched)// 광원 추가
+        {
+            int lightsToAdd = 5;
+            for (int i = 0; i < lightsToAdd; i++)
+            {
+                Vector3 pos = new Vector3(RNG.RandomFloat(-5.0f, 5.0f), 2.0f, RNG.RandomFloat(-2.0f, 2.0f));
+                Vector3 color = RNG.RandomVec3(20.0f, 60.0f);
+                CpuLight newLight = new CpuLight(pos, color, 0.4f);
+
+                newLight.Velocity = new Vector3(
+                    RNG.RandomFloat(-15.0f, 15.0f),
+                    RNG.RandomFloat(-5.0f, 10.0f),
+                    RNG.RandomFloat(-15.0f, 15.0f)
+                );
+
+                if (LightManager.AddLight(newLight))
+                {
+                    int newLightIndex = LightManager.Count - 1;
+                    CpuPointShadow pointShadow = new CpuPointShadow(256, RenderResolution, new Vector2(newLight.GpuLight.Radius, 60.0f));
+                    if (!LightManager.CreatePointShadowForLight(pointShadow, newLightIndex))
+                    {
+                        pointShadow.Dispose();
+                    }
+                }
+            }
+            Console.WriteLine($"라이트 5개 생성\n현재 총 광원 수: {LightManager.Count}");
+        }
+
+        if (KeyboardState[Keys.K] == Keyboard.InputState.Touched) //광원 삭제
+        {
+            int baseLightCount = 3;
+
+            while (LightManager.Count > baseLightCount)
+            {
+                LightManager.DeleteLight(LightManager.Count - 1);
+            }
+        }
+
+        if (KeyboardState[Keys.D2] == Keyboard.InputState.Touched) //시퀀스 모드
+        {
+            IsSequenceMode = !IsSequenceMode;
+            sequenceTimer = 0.0f;
+            hasAutoScreenshot5 = false;
+            hasAutoScreenshot10 = false;
+            hasAutoScreenshot15 = false;
+            sequenceFpsElapsed = 0.0f;
+            sequenceFpsFrames = 0;
+            AverageFramesPerSecond = 0.0f;
+        }
+
+        if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureKeyboard)
+        {
+            if (KeyboardState[Keys.V] == Keyboard.InputState.Touched)
+            {
+                WindowVSync = !WindowVSync;
+            }
+            if (KeyboardState[Keys.G] == Keyboard.InputState.Touched)
+            {
+                RenderImGui = !RenderImGui;
+                if (!RenderImGui)
+                {
+                    RequestPresentationResolution = WindowFramebufferSize;
+                }
+            }
+            if (KeyboardState[Keys.F11] == Keyboard.InputState.Touched)
+            {
+                WindowFullscreen = !WindowFullscreen;
+            }
+            if (KeyboardState[Keys.T] == Keyboard.InputState.Touched)
+            {
+                TimeEnabled = !TimeEnabled;
+            }
+            if (KeyboardState[Keys.D1] == Keyboard.InputState.Touched)
+            {
+                BBG.AbstractShaderProgram.RecompileAll();
+                PathTracerPipeline?.ResetAccumulation();
+            }
+            if (KeyboardState[Keys.E] == Keyboard.InputState.Touched)
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled)
+                {
+                    MouseState.CursorMode = CursorModeValue.CursorNormal;
+                    Camera.Velocity = Vector3.Zero;
+                }
+                else
+                {
+                    MouseState.CursorMode = CursorModeValue.CursorDisabled;
+                }
+            }
+        }
+
+        if (KeyboardState[Keys.F1] == Keyboard.InputState.Touched) SetGraphicsQuality(1);
+        if (KeyboardState[Keys.F2] == Keyboard.InputState.Touched) SetGraphicsQuality(2);
+        if (KeyboardState[Keys.F3] == Keyboard.InputState.Touched) SetGraphicsQuality(3);
+        if (KeyboardState[Keys.F4] == Keyboard.InputState.Touched) SetGraphicsQuality(4);
+        if (KeyboardState[Keys.F5] == Keyboard.InputState.Touched) SetGraphicsQuality(5);
+
+        // 스코프 모드
+        IsScopeMode = MouseState.IsButtonDown(MouseButton.Right);
+
+        if (IsScopeMode)
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(20.0f);
+        }
+        else
+        {
+            Camera.FovY = MathHelper.DegreesToRadians(67.0f);
+        }
+
+        if (RecorderVars.State != FrameRecorderState.Replaying)
+        {
+            if (!RenderImGui || !ImGuiNET.ImGui.GetIO().WantCaptureMouse)
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled && MouseState[MouseButton.Left] == Keyboard.InputState.Touched)
+                {
+                    Vector3 force = Camera.ViewDir * 5.0f;
+
+                    CpuLight newLight = new CpuLight(Camera.Position + Camera.ViewDir * 0.5f, RNG.RandomVec3(32.0f, 88.0f), 0.3f);
+                    newLight.Velocity = Camera.Velocity;
+                    newLight.AddImpulse(force);
+
+                    Camera.AddImpulse(-force);
+
+                    if (LightManager.AddLight(newLight))
+                    {
+                        int newLightIndex = LightManager.Count - 1;
+                        CpuPointShadow pointShadow = new CpuPointShadow(256, RenderResolution, new Vector2(newLight.GpuLight.Radius, 60.0f));
+                        if (!LightManager.CreatePointShadowForLight(pointShadow, newLightIndex))
+                        {
+                            pointShadow.Dispose();
+                        }
+                    }
+                }
+            }
+
+            if (TimeEnabled)
+            {
+                animationTime += dT;
+            }
+
+            if (IsSequenceMode) //시퀀스 중 카메라 이동
+            {
+                sequenceTimer += dT;
+                if (IsAutoScreenshot)
+                {
+                    if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_5sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot5 = true;
+                    }
+                    if (sequenceTimer >= 10.0f && !hasAutoScreenshot10)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_10sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot10 = true;
+                    }
+                    if (sequenceTimer >= 15.0f && !hasAutoScreenshot15)
+                    {
+                        string folderPath = "Screenshots";
+                        System.IO.Directory.CreateDirectory(folderPath);
+                        string fileName = $"{folderPath}/AUTO_15sec_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
+                        Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
+                        Console.WriteLine($"=== 자동 스크린샷 저장: {fileName} ===");
+                        hasAutoScreenshot15 = true;
+                    }
+                }
+
+                float maxTime = waypoints[^1].Time;
+
+                if (sequenceTimer > maxTime)
+                {
+                    sequenceTimer = maxTime;
+                    IsSequenceMode = false;
+
+                    string fpsLogMessage = $"=== 시퀀스 종료 | 평균 FPS: {AverageFramesPerSecond:F2} ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===";
+                    Console.WriteLine(fpsLogMessage);
+
+                    string logFolderPath = "Screenshots";
+                    System.IO.Directory.CreateDirectory(logFolderPath);
+                    File.AppendAllText($"{logFolderPath}/fps_log.txt", fpsLogMessage + Environment.NewLine);
+                }
+
+                for (int i = 0; i < waypoints.Length - 1; i++)
+                {
+                    if (sequenceTimer >= waypoints[i].Time && sequenceTimer <= waypoints[i + 1].Time)
+                    {
+                        float t = (sequenceTimer - waypoints[i].Time) / (waypoints[i + 1].Time - waypoints[i].Time);
+
+                        Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
+                        Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
+                        Camera.Pitch = MathHelper.Lerp(waypoints[i].Pitch, waypoints[i + 1].Pitch, t);
+
+                        Camera.Velocity = Vector3.Zero;
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                if (MouseState.CursorMode == CursorModeValue.CursorDisabled)
+                {
+                    Camera.ProcessInputs(KeyboardState, MouseState);
+                    Camera.AdvanceSimulation(dT);
+
+                    if (MouseState[MouseButton.Button5] != Keyboard.InputState.Pressed)
+                    {
+                        Camera.CollisionDetection(ModelManager);
+                    }
+                }
+            }
+
+            if (TimeEnabled)
+            {
+                LightManager.AdvanceSimulation(dT);
+
+                for (int i = 0; i < LightManager.Count; i++)
+                {
+                    if (LightManager.TryGetLight(i, out CpuLight light) && light.GpuLight.Position.Y > 15.0f)
+                    {
+                        light.Velocity = new Vector3(light.Velocity.X, -Math.Abs(light.Velocity.Y), light.Velocity.Z);
+                    }
+                }
+            }
+
+            LightManager.CollisionDetection(ModelManager);
+        }
+
+        Camera.SetPrevToCurrentPosition();
+    }
+
+    protected override void OnStart()
+    {
+        BBG.Initialize(Helper.GLDebugCallback);
+
+        ref readonly BBG.ContextInfo glContextInfo = ref BBG.GetContextInfo();
+
+        Logger.Log(Logger.LogLevel.Info, $"API: {glContextInfo.APIName}");
+        Logger.Log(Logger.LogLevel.Info, $"GPU: {glContextInfo.DeviceInfo.Name}");
+        Logger.Log(Logger.LogLevel.Info, $"{nameof(BBG.AbstractShader.Preprocessor.SUPPORTS_LINE_DIRECTIVE_SOURCEFILE)} = {BBG.AbstractShader.Preprocessor.SUPPORTS_LINE_DIRECTIVE_SOURCEFILE}");
+
+        if (glContextInfo.GLVersion < 4.6)
+        {
+            Logger.Log(Logger.LogLevel.Fatal, "Your system does not support OpenGL 4.6");
+            Environment.Exit(0);
+        }
+        if (!glContextInfo.DeviceInfo.ExtensionSupport.BindlessTextures)
+        {
+            Logger.Log(Logger.LogLevel.Fatal, "Your system does not support GL_ARB_bindless_texture");
+            Environment.Exit(0);
+        }
+        if (!glContextInfo.DeviceInfo.ExtensionSupport.ImageLoadFormatted)
+        {
+            Logger.Log(Logger.LogLevel.Fatal,
+                "Your system does not support GL_EXT_shader_image_load_formatted.\n" +
+                "Execution is still continued because AMD drivers older than 24.10 have a bug to not report this extension even though its there.\n" +
+                "https://community.amd.com/t5/opengl-vulkan/opengl-bug-gl-ext-shader-image-load-formatted-not-reported-even/m-p/676326#M5140\n" +
+                "If the extension is indeed not supported shader compilation will throw errors"
+            );
+        }
+
+        gpuPerFrameDataBuffer = new BBG.TypedBuffer<GpuPerFrameData>();
+        gpuPerFrameDataBuffer.AllocateElements(BBG.Buffer.MemLocation.DeviceLocal, BBG.Buffer.MemAccess.AutoSync, 1);
+        gpuPerFrameDataBuffer.BindToBufferBackedBlock(BBG.Buffer.BufferBackedBlockTarget.Uniform, 1);
+
+        SkyBoxManager.Initialize();
+        SkyBoxManager.SkyBoxImagePaths = ["Resource/Textures/EnvironmentMap/snow_field_puresky_1k.hdr"];
+        SkyBoxManager.SetSkyBoxMode(SkyBoxManager.SkyBoxMode.ExternalAsset);
+
+        ModelLoader.TextureLoaded += () =>
+        {
+            PathTracerPipeline?.ResetAccumulation();
+        };
+
+        ModelManager = new ModelManager();
+        LightManager = new LightManager();
+
+        gui = new Gui(WindowFramebufferSize);
+        Camera = new Camera(WindowFramebufferSize, new Vector3(7.63f, 2.71f, 0.8f), 360.0f - 165.4f, 90.0f - 7.4f);
+
+        if (true)
+        {
+            ModelLoader.Model corridor = ModelLoader.LoadGltfFromFile("Resource/Models/corridor/corridor.glb", new Transformation().WithScale(0.1f).WithTranslation(0.0f, -10.0f, 0.0f).GetMatrix()).Value;
+            ModelManager.Add(corridor);
+
+            SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
+
+            LightManager.AddLight(new CpuLight(new Vector3(-0.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(40.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(80.0f, 5.7f, -2.0f), new Vector3(500.0f), 0.3f));
+
+            for (int i = 0; i < 3; i++)
+            {
+                if (LightManager.TryGetLight(i, out CpuLight light))
+                {
+                    CpuPointShadow pointShadow = new CpuPointShadow(512, WindowFramebufferSize, new Vector2(light.GpuLight.Radius, 60.0f));
+                    LightManager.CreatePointShadowForLight(pointShadow, i);
+                }
+            }
+        }
+        else
+        {
+            ModelLoader.Model a = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\IntelSponza\Base\Compressed\NewSponza_Main_glTF_002.gltf").Value;
+            ModelLoader.Model b = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\IntelSponza\Curtains\Compressed\NewSponza_Curtains_glTF.gltf").Value;
+            ModelLoader.Model c = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\IntelSponza\Ivy\Compressed\NewSponza_IvyGrowth_glTF.gltf").Value;
+            ModelLoader.Model d = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\IntelSponza\Tree\Compressed\NewSponza_CypressTree_glTF.gltf").Value;
+            //ModelLoader.Model car = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Sketchfab\free_-_mclaren_p1_mso\scene.gltf",
+            //    new Transformation().WithTranslation(4.2f, 0.0f, 0.1f).WithScale(1.5f).WithRotationDeg(-180.0f, -73.0f, -180.0f).GetMatrix()
+            //).Value;
+            //ModelLoader.Model knight = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Sketchfab\medieval_knight__sculpture__game_ready\scene.gltf",
+            //    new Transformation().WithTranslation(-5.5f, 0.0f, 0.1f).WithScale(1.3f).WithRotationDeg(0.0f, 84.0f, 0.0f).GetMatrix()
+            //).Value;
+
+            ModelLoader.HoistMeshPrimitives(ref a);
+            //ModelLoader.HoistMeshPrimitives(ref b);
+            //ModelLoader.HoistMeshPrimitives(ref car);
+
+            ModelManager.Add(a, b, c, d);
+
+            SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
+
+            //LightManager.AddLight(new CpuLight(new Vector3(-6.256f, 8.415f, -0.315f), new Vector3(820.0f, 560.0f, 586.0f), 0.3f));
+            //LightManager.CreatePointShadowForLight(new CpuPointShadow(512, WindowFramebufferSize, new Vector2(0.1f, 60.0f)), 0);
+        }
+
+        MouseState.CursorMode = CursorModeValue.CursorNormal;
+        FrameStateRecorder = new StateRecorder<FrameState>();
+        WindowVSync = true;
+        TimeEnabled = true;
+    }
+
+    protected override void OnWindowResize()
+    {
+        gui.SetSize(WindowFramebufferSize);
+
+        // If GUI is used it calculates and sets the new (viewport-)resolution
+        // If GUI is not used the new resolution is simply window size, that case is handled here
+        if (!RenderImGui)
+        {
+            RequestPresentationResolution = WindowFramebufferSize;
+        }
+
+        OnRender(gpuPerFrameData.DeltaRenderTime);
+    }
+
+    protected override void OnKeyPress(uint key)
+    {
+        gui.PressChar(key);
+    }
+
+    protected override void OnFilesDrop(ReadOnlySpan<string> paths)
+    {
+        for (int i = 0; i < paths.Length; i++)
+        {
+            string path = paths[i];
+            string ext = Path.GetExtension(path);
+            if (ext == ".gltf" || ext == ".glb")
+            {
+                gui.AddModelDialog(path);
+            }
+            else
+            {
+                Logger.Log(Logger.LogLevel.Warn, $"Dropped file \"{Path.GetFileName(path)}\" is unsupported. Only .gltf and .glb");
+            }
+        }
+    }
+
+    private void TryAddFanModel()
+    {
+        string fanPath = Path.Combine(FanModelFolder, "fan.gltf");
+
+        if (!File.Exists(fanPath))
+        {
+            Logger.Log(Logger.LogLevel.Warn, $"Fan model not found: {fanPath}");
+            return;
+        }
+
+        // Sponza 안에 배치할 선풍기 위치/크기
+        Matrix4 fanTransform = new Transformation()
+            .WithScale(FanScale)
+            .WithRotationDeg(0.0f, 90.0f, 0.0f)
+            .WithTranslation(3.0f, -1.0f, 0.0f)
+            .GetMatrix();
+
+        if (ModelLoader.LoadGltfFromFile(fanPath, fanTransform) is not ModelLoader.Model fan)
+        {
+            Logger.Log(Logger.LogLevel.Error, $"Failed loading fan model \"{fanPath}\"");
+            return;
+        }
+
+        int fanModelIndex = ModelManager.CpuModels.Length;
+        ModelManager.Add(fan);
+
+        // 모델 node 이름에서 날개로 보이는 node를 탐색
+        fanBladeNode = FindFanBladeNode(ModelManager.CpuModels[fanModelIndex].Root);
+
+        if (fanBladeNode == null)
+        {
+            Logger.Log(Logger.LogLevel.Warn, "Fan loaded, but no blade-like node was found.");
+            LogFanNodeNames(ModelManager.CpuModels[fanModelIndex].Root);
+            return;
+        }
+
+        fanBladeBaseTransform = fanBladeNode.LocalTransform;
+        Logger.Log(Logger.LogLevel.Info, $"Fan loaded. Animating blade node \"{fanBladeNode.Name}\".");
+    }
+
+    private static ModelLoader.Node? FindFanBladeNode(ModelLoader.Node root)
+    {
+        ModelLoader.Node? result = null;
+
+        ModelLoader.Node.Traverse(root, (node) =>
+        {
+            if (result != null)
+            {
+                return;
+            }
+
+            string name = node.Name;
+            if (name.Contains("blade", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("propeller", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("rotor", StringComparison.OrdinalIgnoreCase))
+            {
+                result = node;
+            }
+        });
+
+        return result;
+    }
+
+    private static void LogFanNodeNames(ModelLoader.Node root)
+    {
+        ModelLoader.Node.Traverse(root, (node) =>
+        {
+            Logger.Log(Logger.LogLevel.Info, $"Fan node: \"{node.Name}\"");
+        });
+    }
+
+    private void UpdateFanBladeAnimation(float time)
+    {
+        if (fanBladeNode == null)
+        {
+            return;
+        }
+
+        float revolutionsPerSecond = FanBladeRpm / 60.0f;
+        float angleRad = time * revolutionsPerSecond * MathF.Tau;
+
+        Transformation animated = fanBladeBaseTransform;
+        animated.Rotation = Quaternion.FromAxisAngle(Vector3.UnitZ, angleRad) * fanBladeBaseTransform.Rotation;
+        fanBladeNode.LocalTransform = animated;
+    }
+
+    /// <summary>
+    /// We should avoid random resolution changes inside a frame so if you can use
+    /// <see cref="RequestPresentationResolution"/> instead.
+    /// It will always make the change at the beginning of a frame.
+    /// </summary>
+    private void SetResolutions(Vector2i renderRes, Vector2i presentRes)
+    {
+        // Size of <= 0 creates OpenGL errors
+        renderRes = Vector2i.ComponentMax(renderRes, new Vector2i(1, 1));
+
+        RasterizerPipeline?.SetSize(renderRes, presentRes);
+        PathTracerPipeline?.SetSize(renderRes);
+
+        if (RenderMode_ == RenderMode.Rasterizer || RenderMode_ == RenderMode.PathTracer)
+        {
+            if (VolumetricLight != null) VolumetricLight.SetSize(presentRes);
+            if (Bloom != null) Bloom.SetSize(presentRes);
+            if (TonemapAndGamma != null) TonemapAndGamma.SetSize(presentRes);
+            if (LightManager != null) LightManager.SetSizeRayTracedShadows(renderRes);
+        }
+    }
+
+    /// <summary>
+    /// We should avoid random render mode changes inside a frame so if you can use
+    /// <see cref="RequestRenderMode"/> instead.
+    /// It will always make the change at the beginning of a frame.
+    /// </summary>
+    private void SetRenderMode(RenderMode renderMode, Vector2i renderRes, Vector2i presentRes)
+    {
+        // On AMD driver Vanguard-24.10-RC5-May22 and newer (and not 23.12.1 or earlier) setting the
+        // Rasterizer render mode may cause a crash, especially during texture loading.
+
+        if (renderMode == RenderMode.Rasterizer)
+        {
+            RasterizerPipeline?.Dispose();
+            RasterizerPipeline = new RasterPipeline(renderRes, presentRes);
+        }
+        else
+        {
+            RasterizerPipeline?.Dispose();
+            RasterizerPipeline = null;
+        }
+
+        if (renderMode == RenderMode.PathTracer)
+        {
+            // We disable time to allow for accumulation by default in case there were any moving objects
+            TimeEnabled = false;
+
+            PathTracerPipeline?.Dispose();
+            PathTracerPipeline = new PathTracerPipeline(renderRes, PathTracerPipeline == null ? new PathTracer.GpuSettings() : PathTracerPipeline.GetPTSettings());
+        }
+        else
+        {
+            PathTracerPipeline?.Dispose();
+            PathTracerPipeline = null;
+        }
+
+        if (renderMode == RenderMode.Rasterizer || renderMode == RenderMode.PathTracer)
+        {
+            if (BoxRenderer != null) BoxRenderer.Dispose();
+            BoxRenderer = new BoxRenderer();
+
+            if (TonemapAndGamma != null) TonemapAndGamma.Dispose();
+            TonemapAndGamma = new TonemapAndGammaCorrect(presentRes, TonemapAndGamma == null ? new TonemapAndGammaCorrect.GpuSettings() : TonemapAndGamma.Settings);
+
+            if (Bloom != null) Bloom.Dispose();
+            Bloom = new Bloom(presentRes, Bloom == null ? new Bloom.GpuSettings() : Bloom.Settings);
+
+            if (VolumetricLight != null) VolumetricLight.Dispose();
+            VolumetricLight = new VolumetricLighting(presentRes, VolumetricLight == null ? new VolumetricLighting.GpuSettings() : VolumetricLight.Settings);
+        }
+    }
+
+    public void SetFrameState(in FrameState state)
+    {
+        Camera.Position = state.CameraState.Position;
+        Camera.UpVector = state.CameraState.UpVector;
+        Camera.Yaw = state.CameraState.LookX;
+        Camera.Pitch = state.CameraState.LookY;
+        Camera.FovY = state.CameraState.FovY;
+        animationTime = state.AnimationTime;
+    }
+
+    private FrameState GetFrameState()
+    {
+        FrameState state = new FrameState();
+        state.CameraState.Position = Camera.Position;
+        state.CameraState.UpVector = Camera.UpVector;
+        state.CameraState.LookX = Camera.Yaw;
+        state.CameraState.LookY = Camera.Pitch;
+        state.CameraState.FovY = Camera.FovY;
+        state.AnimationTime = animationTime;
+
+        return state;
+    }
+
+    private void HandleFrameRecorderLogic()
+    {
+        if (RecorderVars.State == FrameRecorderState.Replaying)
+        {
+            if (RenderMode_ == RenderMode.Rasterizer ||
+                (RenderMode_ == RenderMode.PathTracer && PathTracerPipeline.AccumulatedSamples >= RecorderVars.PathTracerSamples))
+            {
+                if (RecorderVars.IsOutputFrames)
+                {
+                    string path = $"{RecordingSettings.FRAMES_OUTPUT_FOLDER}/{FrameStateRecorder.ReplayStateIndex}";
+                    Directory.CreateDirectory(RecordingSettings.FRAMES_OUTPUT_FOLDER);
+                    Helper.TextureToDiskJpg(TonemapAndGamma.Result, path);
+                }
+
+                SetFrameState(FrameStateRecorder.Replay());
+
+                // Stop replaying when we are at the first frame again
+                if (FrameStateRecorder.ReplayStateIndex == 0)
+                {
+                    RecorderVars.State = FrameRecorderState.None;
+                }
+            }
+        }
+        else if (RecorderVars.State == FrameRecorderState.Recording)
+        {
+            if (RecorderVars.FrameTimer.Elapsed.TotalMilliseconds >= (1000.0f / RecorderVars.FPSGoal))
+            {
+                FrameStateRecorder.Record(GetFrameState());
+                RecorderVars.FrameTimer.Restart();
+            }
+        }
+
+        if (RecorderVars.State != FrameRecorderState.Replaying &&
+            KeyboardState[Keys.R] == Keyboard.InputState.Touched &&
+            KeyboardState[Keys.LeftControl] == Keyboard.InputState.Pressed)
+        {
+            // Start/Stop recording
+            if (RecorderVars.State == FrameRecorderState.Recording)
+            {
+                RecorderVars.State = FrameRecorderState.None;
+            }
+            else
+            {
+                RecorderVars.State = FrameRecorderState.Recording;
+                RecorderVars.FrameTimer.Restart();
+
+                FrameStateRecorder.Clear();
+            }
+        }
+
+        if (RecorderVars.State != FrameRecorderState.Recording &&
+            KeyboardState[Keys.Space] == Keyboard.InputState.Touched &&
+            KeyboardState[Keys.LeftControl] == Keyboard.InputState.Pressed)
+        {
+            // Start/Stop replaying
+            if (RecorderVars.State == FrameRecorderState.Replaying)
+            {
+                RecorderVars.State = FrameRecorderState.None;
+            }
+            else if (FrameStateRecorder.Count > 0)
+            {
+                if (RenderMode_ == RenderMode.PathTracer)
+                {
+                    // Copy settings into PathTracer
+                    PathTracerPipeline.DenoisingEnabled = RecorderVars.DoDenoising;
+
+                    if (RecorderVars.DoDenoising)
+                    {
+                        PathTracerPipeline.AutoDenoiseSamplesThreshold = RecorderVars.PathTracerSamples;
+                    }
+                }
+
+                RecorderVars.State = FrameRecorderState.Replaying;
+                MouseState.CursorMode = CursorModeValue.CursorNormal;
+
+                // Replay first frame here to avoid edge cases
+                SetFrameState(FrameStateRecorder.Replay());
+            }
+        }
+    }
+}
+>>>>>>> 47d89fbcab941bc5291fb098cf09e5e69a04c50b
