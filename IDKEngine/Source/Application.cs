@@ -125,28 +125,28 @@ class Application : GameWindowBase
     public bool IsSequenceMode = false;
     public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
+    public float TargetFPS = 60.0f;
+    private float lumVarianceMin = 0.0f;
+    private float lumVarianceMax = 0.3f;
+    private float lumVarianceAdjustSpeed = 0.001f;
     private bool hasAutoScreenshot5 = false;
     private bool hasAutoScreenshot10 = false;
     private bool hasAutoScreenshot15 = false;
     private float sequenceFpsElapsed = 0.0f;
     private int sequenceFpsFrames = 0;
-    public bool IsAutoScreenshot = false;
     public bool IsFramerateAwareVRS = false;
-    public float TargetFPS = 60.0f;
-    private float lumVarianceMin = 0.01f;
-    private float lumVarianceMax = 0.3f;
-    private float lumVarianceAdjustSpeed = 0.005f;
+    public bool IsAutoScreenshot = false;
 
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
-{
-    (0.0f,  new Vector3(0.0f, -5.0f, -18.0f),  88.0f,  52.0f),
-    (5.0f,  new Vector3(6.0f,  0.0f, -12.0f), 115.0f,  67.5f),
-    (10.0f, new Vector3(12.0f,  5.0f, -7.0f), 146.0f,  93.0f),
-    (15.0f, new Vector3(15.0f, 12.0f, 1.0f),  190.0f, 115.0f),
-    (20.0f, new Vector3(10.0f, 13.0f, 7.0f),  220.0f, 124.0f),
-    (25.0f, new Vector3(6.0f, 13.0f, 12.0f),  240.0f, 125.0f),
-    (28.0f, new Vector3(0.7f, 13.0f, 15.0f),  269.0f, 119.0f),
-};
+    {
+        (0.0f,  new Vector3(-13.5f, 6.5f, -0.5f),  0.0f, 120.0f),
+        (5.0f,  new Vector3(-10.0f, 1.2f, -0.5f),  0.0f,  95.0f),
+        (10.0f, new Vector3(-1.0f, 0.4f, -3.4f),   90.0f,  70.0f),
+        (15.0f, new Vector3(4.4f, 1.3f, 0.0f),    180.0f,  85.0f),
+        (20.0f, new Vector3(-1.7f, 2.0f, 2.3f),   270.0f,  65.0f),
+        (25.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f),
+        (28.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f)
+    };
 
     private GpuPerFrameData gpuPerFrameData;
     private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
@@ -256,6 +256,7 @@ class Application : GameWindowBase
         if (RenderMode_ == RenderMode.Rasterizer)
         {
             //RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT);
+            // ▼▼▼ MouseState.Position이랑 WindowFramebufferSize를 택배로 보냅니다! ▼▼▼
             RasterizerPipeline.Render(ModelManager, LightManager, Camera, dT, MouseState.Position, new Vector2(WindowFramebufferSize.X, WindowFramebufferSize.Y), IsScopeMode);
             if (RasterizerPipeline.IsConfigureGridMode)
             {
@@ -364,19 +365,12 @@ class Application : GameWindowBase
             // Framerate-aware VRS
             float currentFPS = 1.0f / dT;
             float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-            bool isSceneComplex = currentLumVariance < 0.15f;
-            if (currentFPS < TargetFPS - 5.0f)
-            {
-                float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.5f : lumVarianceAdjustSpeed;
-                currentLumVariance += adjustSpeed;
-                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
-            }
-            else if (currentFPS > TargetFPS + 5.0f)
-            {
-                float adjustSpeed = isSceneComplex ? lumVarianceAdjustSpeed * 0.3f : lumVarianceAdjustSpeed * 0.5f;
-                currentLumVariance -= adjustSpeed;
-                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
-            }
+
+            float fpsDiff = TargetFPS - currentFPS;
+            float adjustAmount = fpsDiff * 0.0001f;
+            currentLumVariance += adjustAmount;
+            currentLumVariance = Math.Clamp(currentLumVariance, lumVarianceMin, lumVarianceMax);
+
             var settings = RasterizerPipeline.LightingVRS.Settings;
             settings.LumVarianceFactor = currentLumVariance;
             RasterizerPipeline.LightingVRS.Settings = settings;
@@ -412,9 +406,9 @@ class Application : GameWindowBase
         {
             string folderPath = "Screenshots";
             System.IO.Directory.CreateDirectory(folderPath);
-
+            
             string fileName = $"{folderPath}/Screenshot_{DateTime.Now:yyyyMMdd_HHmmss}.jpg";
-
+            
             Helper.TextureToDiskJpg(TonemapAndGamma.Result, fileName);
         }
 
@@ -424,9 +418,9 @@ class Application : GameWindowBase
             for (int i = 0; i < lightsToAdd; i++)
             {
                 Vector3 pos = new Vector3(RNG.RandomFloat(-5.0f, 5.0f), 2.0f, RNG.RandomFloat(-2.0f, 2.0f));
-                Vector3 color = RNG.RandomVec3(20.0f, 60.0f);
+                Vector3 color = RNG.RandomVec3(20.0f, 60.0f); 
                 CpuLight newLight = new CpuLight(pos, color, 0.4f);
-
+                
                 newLight.Velocity = new Vector3(
                     RNG.RandomFloat(-15.0f, 15.0f),
                     RNG.RandomFloat(-5.0f, 10.0f),
@@ -561,7 +555,6 @@ class Application : GameWindowBase
             if (IsSequenceMode) //시퀀스 중 카메라 이동
             {
                 sequenceTimer += dT;
-
                 if (IsAutoScreenshot)
                 {
                     if (sequenceTimer >= 5.0f && !hasAutoScreenshot5)
@@ -595,15 +588,9 @@ class Application : GameWindowBase
 
                 float maxTime = waypoints[^1].Time;
 
-                if (sequenceTimer > maxTime)
+                if (sequenceTimer > maxTime) 
                 {
-                    float avgFps = sequenceFpsElapsed > 0 ? sequenceFpsFrames / sequenceFpsElapsed : 0;
-                    Console.WriteLine($"=== 시퀀스 완료 === 평균 FPS: {avgFps:F1}");
                     sequenceTimer = 0.0f;
-                    sequenceFpsElapsed = 0.0f;
-                    sequenceFpsFrames = 0;
-                    AverageFramesPerSecond = 0.0f;
-                    IsSequenceMode = false;
                 }
 
                 for (int i = 0; i < waypoints.Length - 1; i++)
@@ -615,8 +602,8 @@ class Application : GameWindowBase
                         Camera.Position = Vector3.Lerp(waypoints[i].Pos, waypoints[i + 1].Pos, t);
                         Camera.Yaw = MathHelper.Lerp(waypoints[i].Yaw, waypoints[i + 1].Yaw, t);
                         Camera.Pitch = MathHelper.Lerp(waypoints[i].Pitch, waypoints[i + 1].Pitch, t);
-
-                        Camera.Velocity = Vector3.Zero;
+                        
+                        Camera.Velocity = Vector3.Zero; 
                         break;
                     }
                 }
@@ -705,14 +692,51 @@ class Application : GameWindowBase
 
         if (true)
         {
-            ModelLoader.Model suntemple = ModelLoader.LoadGltfFromFile("Resource/Models/suntemple/suntemple.glb", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -10.0f, 0.0f).GetMatrix()).Value;
-            ModelManager.Add(suntemple);
+            ModelLoader.Model sponza = ModelLoader.LoadGltfFromFile("Resource/Models/SponzaCompressed/Sponza.gltf", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -1.0f, 0.0f).GetMatrix()).Value;
+            sponza.GpuModel.Meshes[63].EmissiveBias = 10.0f;
+            sponza.GpuModel.Meshes[70].EmissiveBias = 20.0f;
+            sponza.GpuModel.Meshes[3].EmissiveBias = 12.0f;
+            sponza.GpuModel.Meshes[99].EmissiveBias = 15.0f;
+            sponza.GpuModel.Meshes[97].EmissiveBias = 9.0f;
+            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
+            sponza.GpuModel.Meshes[38].EmissiveBias = 20.0f;
+            sponza.GpuModel.Meshes[40].EmissiveBias = 20.0f;
+            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
+            //sponza.GpuModel.Meshes[46].SpecularBias = 1.0f;
+            //sponza.GpuModel.Meshes[46].RoughnessBias = -0.436f; // -0.665
+            //sponza.GpuModel.Meshes[46].NormalMapStrength = 0.0f;
+
+            ModelLoader.Model lucy = ModelLoader.LoadGltfFromFile("Resource/Models/LucyCompressed/Lucy.gltf", new Transformation().WithScale(0.8f).WithRotationDeg(0.0f, 90.0f, 0.0f).WithTranslation(-1.68f, 2.3f, 0.0f).GetMatrix()).Value;
+            lucy.GpuModel.Meshes[0].SpecularBias = -1.0f;
+            lucy.GpuModel.Meshes[0].TransmissionBias = 0.98f;
+            lucy.GpuModel.Meshes[0].IORBias = -0.326f;
+            lucy.GpuModel.Meshes[0].AbsorbanceBias = new Vector3(0.81f, 0.18f, 0.0f);
+            lucy.GpuModel.Meshes[0].RoughnessBias = -1.0f;
+            lucy.GpuModel.Meshes[0].TintOnTransmissive = false;
+            lucy.GpuModel.Materials[0].IsVolumetric = true;
+
+            ModelLoader.Model helmet = ModelLoader.LoadGltfFromFile("Resource/Models/HelmetCompressed/Helmet.gltf", new Transformation().WithRotationDeg(0.0f, 45.0f, 0.0f).GetMatrix()).Value;
+
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Bistro\Bistro.glb").Value;
+            //ModelLoader.Model tes25t = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\BistroRot25Z.glb").Value;
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SanMiguel\SanMiguel.gltf").Value;
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\HighPolyDragon.glb").Value;
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SponzaMergedRotated45.glb").Value;
+
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\untitled.glb").Value;
+            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\DragonMerged.glb").Value;
+
+            // Merging a model with many meshes into one can more than 2x Ray Tracing performance! (even with TLAS)
+            ModelLoader.HoistMeshPrimitives(ref sponza, true);
+
+            ModelManager.Add(sponza, lucy, helmet);
+            TryAddFanModel();
 
             SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
 
             LightManager.AddLight(new CpuLight(new Vector3(-4.5f, 5.7f, -2.0f), new Vector3(429.8974f, 22.459948f, 28.425867f), 0.3f));
             LightManager.AddLight(new CpuLight(new Vector3(-0.5f, 5.7f, -2.0f), new Vector3(8.773416f, 506.7525f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), /*new Vector3(-4.0f, 0.0f, 0.0f), */new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
 
             for (int i = 0; i < 3; i++)
             {

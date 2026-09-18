@@ -802,8 +802,8 @@ partial class Gui : IDisposable
                     {
                         ImGui.SliderFloat("Target FPS", ref app.TargetFPS, 30.0f, 165.0f);
                     }
-                    ImGui.SliderFloat("MotionThresholdLow",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow,0.0f,0.05f);
-                    ImGui.SliderFloat("MotionThresholdHigh",ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh,0.0f,0.1f);
+                    ImGui.SliderFloat("MotionThresholdLow", ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdLow, 0.0f, 0.05f);
+                    ImGui.SliderFloat("MotionThresholdHigh", ref app.RasterizerPipeline.LightingVRS.Settings.MotionThresholdHigh, 0.0f, 0.1f);
 
                     var temporalSettings = app.RasterizerPipeline.LightingVRS.Settings;
                     bool temporalStabilization = temporalSettings.IsTemporalStabilization == 1;
