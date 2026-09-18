@@ -403,9 +403,13 @@ log.txt
 RecordedFrames
 
 IDKEngine/Screenshots/
+<<<<<<< HEAD
 cd
 git
 mainIDKEngine/Resource/Models/suntemple/ 
 IDKEngine/Resource/Models/corridor/ 
 IDKEngine/Resource/Models/corridor/ 
 IDKEngine/Resource/Models/suntemple/ 
+=======
+*.glb
+>>>>>>> main
