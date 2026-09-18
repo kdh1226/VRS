@@ -126,9 +126,9 @@ class Application : GameWindowBase
     public float AverageFramesPerSecond { get; private set; }
     private float sequenceTimer = 0.0f;
     public float TargetFPS = 60.0f;
-    private float lumVarianceMin = 0.01f;
+    private float lumVarianceMin = 0.0f;
     private float lumVarianceMax = 0.3f;
-    private float lumVarianceAdjustSpeed = 0.005f;
+    private float lumVarianceAdjustSpeed = 0.001f;
     private bool hasAutoScreenshot5 = false;
     private bool hasAutoScreenshot10 = false;
     private bool hasAutoScreenshot15 = false;
@@ -365,16 +365,12 @@ class Application : GameWindowBase
             // Framerate-aware VRS
             float currentFPS = 1.0f / dT;
             float currentLumVariance = RasterizerPipeline.LightingVRS.Settings.LumVarianceFactor;
-            if (currentFPS < TargetFPS - 5.0f)
-            {
-                currentLumVariance += lumVarianceAdjustSpeed;
-                currentLumVariance = Math.Min(currentLumVariance, lumVarianceMax);
-            }
-            else if (currentFPS > TargetFPS + 5.0f)
-            {
-                currentLumVariance -= lumVarianceAdjustSpeed * 0.5f;
-                currentLumVariance = Math.Max(currentLumVariance, lumVarianceMin);
-            }
+
+            float fpsDiff = TargetFPS - currentFPS;
+            float adjustAmount = fpsDiff * 0.0001f;
+            currentLumVariance += adjustAmount;
+            currentLumVariance = Math.Clamp(currentLumVariance, lumVarianceMin, lumVarianceMax);
+
             var settings = RasterizerPipeline.LightingVRS.Settings;
             settings.LumVarianceFactor = currentLumVariance;
             RasterizerPipeline.LightingVRS.Settings = settings;
