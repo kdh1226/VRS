@@ -1057,7 +1057,15 @@ class Application : GameWindowBase
 
                 if (sequenceTimer > maxTime)
                 {
-                    sequenceTimer = 0.0f;
+                    sequenceTimer = maxTime;
+                    IsSequenceMode = false;
+
+                    string fpsLogMessage = $"=== 시퀀스 종료 | 평균 FPS: {AverageFramesPerSecond:F2} ({DateTime.Now:yyyy-MM-dd HH:mm:ss}) ===";
+                    Console.WriteLine(fpsLogMessage);
+
+                    string logFolderPath = "Screenshots";
+                    System.IO.Directory.CreateDirectory(logFolderPath);
+                    File.AppendAllText($"{logFolderPath}/fps_log.txt", fpsLogMessage + Environment.NewLine);
                 }
 
                 for (int i = 0; i < waypoints.Length - 1; i++)

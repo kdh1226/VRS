@@ -16,8 +16,8 @@ class TonemapAndGammaCorrect : IDisposable
         public float Compression = 0.1f;
         public bool DoTonemapAndSrgbTransform = true;
 
-        public int IsFilmGrain = 1;
-        public int IsChromaticAberration = 1;
+        public int IsFilmGrain = 0;
+        public int IsChromaticAberration = 0;
 
         public float FilmGrainStrength = 0.05f; // 기본 강도 5%
         public float Time = 0.0f;
