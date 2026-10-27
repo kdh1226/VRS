@@ -855,8 +855,8 @@ partial class Gui : IDisposable
                     if (app.RasterizerPipeline.IsMotionBlur)
                     {
                         ImGui.SliderInt("Samples##SamplesMotionBlur", ref app.RasterizerPipeline.MotionBlur.Settings.SampleCount, 1, 32);
-                        ImGui.SliderFloat("Intensity", ref app.RasterizerPipeline.MotionBlur.Settings.Intensity, 0.0f, 25.0f);
-                        ImGui.SliderFloat("MaxBlurPixels", ref app.RasterizerPipeline.MotionBlur.Settings.MaxBlurPixels, 1.0f, 128.0f);
+                        ImGui.SliderFloat("Intensity", ref app.RasterizerPipeline.MotionBlur.Settings.Intensity, 0.0f, 100.0f);
+                        ImGui.SliderFloat("MaxBlurPixels", ref app.RasterizerPipeline.MotionBlur.Settings.MaxBlurPixels, 1.0f, 32.0f);
 
                         if (app.RasterizerPipeline.IsVariableRateShading)
                         {
