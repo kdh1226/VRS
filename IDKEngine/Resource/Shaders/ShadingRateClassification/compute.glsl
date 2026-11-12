@@ -39,7 +39,7 @@ const int ENUM_VRS_MODE_DISTANCE = 2;
 
 uint GetFrequencyRate(uint frequencyRate);
 uint GetDistanceRate(float linearDepth);
-uint GetMotionAdaptiveRate(float meanSpeed);
+uint GetMotionAdaptiveRate(float meanSpeed, uint currentRate);
 uint ApplyTemporalStabilization(uint candidateRate);
 
 uint ApplyTemporalStabilization(uint candidateRate)
@@ -115,19 +115,20 @@ uint GetDistanceRate(float linearDepth)
     return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
 }
 
-uint GetMotionAdaptiveRate(float meanSpeed)
+uint GetMotionAdaptiveRate(float meanSpeed, uint currentRate)
 {
+    // 모션이 임계값 미만이면 기존 VRS 판정을 그대로 유지 (모션블러 VRS가 관여 안 함)
     if (meanSpeed < settingsUBO.MotionThresholdLow)
     {
-        return ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV;
+        return currentRate;
     }
 
-    if (meanSpeed < settingsUBO.MotionThresholdHigh)
+    // 모션이 있으면 현재 rate 기준으로 딱 한 단계만 더 거칠게
+    if (currentRate == ENUM_SHADING_RATE_1_INVOCATION_PER_PIXEL_NV)
     {
         return ENUM_SHADING_RATE_1_INVOCATION_PER_2X2_PIXELS_NV;
     }
-
-    return ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV;
+    return ENUM_SHADING_RATE_1_INVOCATION_PER_4X4_PIXELS_NV; // 이미 2x2 이상이면 4x4로 한 단계
 }
 
 void GetTileData(vec3 color, vec2 velocity, out float speedSum, out float luminanceSum, out float luminanceSquaredSum);
@@ -195,11 +196,7 @@ void main()
         // Apply motion-blur VRS after the selected base VRS mode.
         if (settingsUBO.IsMotionBlurVRS == 1)
         {
-            // meanSpeed is the tile-average motion adjusted by DeltaRenderTime.
-            uint motionRate = GetMotionAdaptiveRate(meanSpeed);
-
-            // Select the coarser rate; larger values represent coarser shading.
-            finalRateValue = max(finalRateValue, motionRate);            
+            finalRateValue = GetMotionAdaptiveRate(meanSpeed, finalRateValue);
         }
 
         if (settingsUBO.IsFoveated == 1)
