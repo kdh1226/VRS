@@ -138,15 +138,15 @@ class Application : GameWindowBase
     public bool IsAutoScreenshot = false;
 
     private (float Time, Vector3 Pos, float Yaw, float Pitch)[] waypoints = new[]
-    {
-        (0.0f,  new Vector3(-13.5f, 6.5f, -0.5f),  0.0f, 120.0f),
-        (5.0f,  new Vector3(-10.0f, 1.2f, -0.5f),  0.0f,  95.0f),
-        (10.0f, new Vector3(-1.0f, 0.4f, -3.4f),   90.0f,  70.0f),
-        (15.0f, new Vector3(4.4f, 1.3f, 0.0f),    180.0f,  85.0f),
-        (20.0f, new Vector3(-1.7f, 2.0f, 2.3f),   270.0f,  65.0f),
-        (25.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f),
-        (28.0f, new Vector3(-13.5f, 6.5f, -0.5f), 360.0f, 120.0f)
-    };
+{
+    (0.0f,  new Vector3(0.0f, -5.0f, -18.0f),  88.0f,  52.0f),
+    (5.0f,  new Vector3(6.0f,  0.0f, -12.0f), 115.0f,  67.5f),
+    (10.0f, new Vector3(12.0f,  5.0f, -7.0f), 146.0f,  93.0f),
+    (15.0f, new Vector3(15.0f, 12.0f, 1.0f),  190.0f, 115.0f),
+    (20.0f, new Vector3(10.0f, 13.0f, 7.0f),  220.0f, 124.0f),
+    (25.0f, new Vector3(6.0f, 13.0f, 12.0f),  240.0f, 125.0f),
+    (28.0f, new Vector3(0.7f, 13.0f, 15.0f),  269.0f, 119.0f),
+};
 
     private GpuPerFrameData gpuPerFrameData;
     private BBG.TypedBuffer<GpuPerFrameData> gpuPerFrameDataBuffer;
@@ -692,51 +692,14 @@ class Application : GameWindowBase
 
         if (true)
         {
-            ModelLoader.Model sponza = ModelLoader.LoadGltfFromFile("Resource/Models/SponzaCompressed/Sponza.gltf", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -1.0f, 0.0f).GetMatrix()).Value;
-            sponza.GpuModel.Meshes[63].EmissiveBias = 10.0f;
-            sponza.GpuModel.Meshes[70].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[3].EmissiveBias = 12.0f;
-            sponza.GpuModel.Meshes[99].EmissiveBias = 15.0f;
-            sponza.GpuModel.Meshes[97].EmissiveBias = 9.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[38].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[40].EmissiveBias = 20.0f;
-            sponza.GpuModel.Meshes[42].EmissiveBias = 20.0f;
-            //sponza.GpuModel.Meshes[46].SpecularBias = 1.0f;
-            //sponza.GpuModel.Meshes[46].RoughnessBias = -0.436f; // -0.665
-            //sponza.GpuModel.Meshes[46].NormalMapStrength = 0.0f;
-
-            ModelLoader.Model lucy = ModelLoader.LoadGltfFromFile("Resource/Models/LucyCompressed/Lucy.gltf", new Transformation().WithScale(0.8f).WithRotationDeg(0.0f, 90.0f, 0.0f).WithTranslation(-1.68f, 2.3f, 0.0f).GetMatrix()).Value;
-            lucy.GpuModel.Meshes[0].SpecularBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TransmissionBias = 0.98f;
-            lucy.GpuModel.Meshes[0].IORBias = -0.326f;
-            lucy.GpuModel.Meshes[0].AbsorbanceBias = new Vector3(0.81f, 0.18f, 0.0f);
-            lucy.GpuModel.Meshes[0].RoughnessBias = -1.0f;
-            lucy.GpuModel.Meshes[0].TintOnTransmissive = false;
-            lucy.GpuModel.Materials[0].IsVolumetric = true;
-
-            ModelLoader.Model helmet = ModelLoader.LoadGltfFromFile("Resource/Models/HelmetCompressed/Helmet.gltf", new Transformation().WithRotationDeg(0.0f, 45.0f, 0.0f).GetMatrix()).Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\Bistro\Bistro.glb").Value;
-            //ModelLoader.Model tes25t = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\BistroRot25Z.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SanMiguel\SanMiguel.gltf").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\HighPolyDragon.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\SponzaMergedRotated45.glb").Value;
-
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\untitled.glb").Value;
-            //ModelLoader.Model test = ModelLoader.LoadGltfFromFile(@"C:\Users\Julian\Downloads\Models\DC\DragonMerged.glb").Value;
-
-            // Merging a model with many meshes into one can more than 2x Ray Tracing performance! (even with TLAS)
-            ModelLoader.HoistMeshPrimitives(ref sponza, true);
-
-            ModelManager.Add(sponza, lucy, helmet);
-            TryAddFanModel();
+            ModelLoader.Model suntemple = ModelLoader.LoadGltfFromFile("Resource/Models/suntemple/suntemple.glb", new Transformation().WithScale(1.815f).WithTranslation(0.0f, -10.0f, 0.0f).GetMatrix()).Value;
+            ModelManager.Add(suntemple);
 
             SetRenderMode(RenderMode.Rasterizer, WindowFramebufferSize, WindowFramebufferSize);
 
             LightManager.AddLight(new CpuLight(new Vector3(-4.5f, 5.7f, -2.0f), new Vector3(429.8974f, 22.459948f, 28.425867f), 0.3f));
             LightManager.AddLight(new CpuLight(new Vector3(-0.5f, 5.7f, -2.0f), new Vector3(8.773416f, 506.7525f, 28.425867f), 0.3f));
-            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), /*new Vector3(-4.0f, 0.0f, 0.0f), */new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
+            LightManager.AddLight(new CpuLight(new Vector3(4.5f, 5.7f, -2.0f), new Vector3(8.773416f, 22.459948f, 533.77466f), 0.3f));
 
             for (int i = 0; i < 3; i++)
             {
